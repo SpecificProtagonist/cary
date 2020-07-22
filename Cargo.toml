@@ -1,0 +1,14 @@
+[package]
+name = "wgpu-test"
+authors = ["Vincent Junge <kvark@mozilla.com>"]
+edition = "2018"
+version = "0.0.1"
+
+
+[dependencies]
+wgpu = { git = "https://github.com/gfx-rs/wgpu-rs", branch = "v0.5" }
+winit = { version = "0.22", features = ["web-sys"]}
+futures = "0.3"
+
+[build-dependencies]
+shaderc = "0.6"
