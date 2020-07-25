@@ -1,10 +1,11 @@
 #version 450
 
-out gl_PerVertex {
-    vec4 gl_Position;
-};
+layout(location = 0) in vec3 position;
+layout(location = 1) in vec2 tex_coords;
+
+layout(location = 0) out vec2 tex_coords_frag;
 
 void main() {
-    vec2 position = vec2(gl_VertexIndex, (gl_VertexIndex & 1) * 2) - 1;
-    gl_Position = vec4(position, 0.0, 1.0);
+    gl_Position = vec4(position, 1.0);
+    tex_coords_frag = tex_coords;
 }

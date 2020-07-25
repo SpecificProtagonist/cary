@@ -9,6 +9,11 @@ version = "0.0.1"
 wgpu = { git = "https://github.com/gfx-rs/wgpu-rs", branch = "v0.5" }
 winit = { version = "0.22", features = ["web-sys"]}
 futures = "0.3"
+bytemuck = "1.2"
+image = "0.23"
 
 [build-dependencies]
 shaderc = "0.6"
+walkdir = "2"
+texture_packer = { version = "0.21.1", features = ["png"]}
+image = "0.23"

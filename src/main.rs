@@ -1,5 +1,5 @@
 mod renderer;
-
+mod textures;
 
 use winit::{
     event::{Event, WindowEvent},
