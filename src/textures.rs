@@ -27,4 +27,4 @@ impl Sprite {
     }
 }
 
-include!(concat!(env!("OUT_DIR"), "/uv-coords"));
+include!(concat!(env!("OUT_DIR"), "/uv-coords.rs"));

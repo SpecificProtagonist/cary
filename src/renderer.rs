@@ -5,6 +5,7 @@ use std::{
 use image::GenericImageView;
 use winit::window::Window;
 use wgpu::*;
+use super::textures;
 
 
 
@@ -39,14 +40,6 @@ impl Vertex {
     }
 }
 
-const TEST_VERT: &[Vertex] = &[
-    Vertex { position: [-0.5,  0.5, 0.0], tex_coords: [0.0, 0.0] },
-    Vertex { position: [-0.5, -0.5, 0.0], tex_coords: [0.0, 1.0] },
-    Vertex { position: [ 0.5,  0.5, 0.0], tex_coords: [1.0, 0.0] },
-    Vertex { position: [-0.5, -0.5, 0.0], tex_coords: [0.0, 1.0] },
-    Vertex { position: [ 0.5, -0.5, 0.0], tex_coords: [1.0, 1.0] },
-    Vertex { position: [ 0.5,  0.5, 0.0], tex_coords: [1.0, 0.0] }
-];
 
 
 
@@ -63,6 +56,14 @@ pub struct Renderer {
 
 impl Renderer {
     pub async fn create(window: &Window) -> Self {
+        let test_vert = &[
+            Vertex { position: [-0.5,  0.5, 0.0], tex_coords: [1085.0/2048.0, 543.0/1024.0] },
+            Vertex { position: [-0.5, -0.5, 0.0], tex_coords: [1085.0/2048.0, 863.0/1024.0] },
+            Vertex { position: [ 0.5,  0.5, 0.0], tex_coords: [1654.0/2048.0, 543.0/1024.0] },
+            Vertex { position: [-0.5, -0.5, 0.0], tex_coords: [1085.0/2048.0, 863.0/1024.0] },
+            Vertex { position: [ 0.5, -0.5, 0.0], tex_coords: [1654.0/2048.0, 863.0/1024.0] },
+            Vertex { position: [ 0.5,  0.5, 0.0], tex_coords: [1654.0/2048.0, 543.0/1024.0] }
+        ];
         /* Set up device */
 
         let size = window.inner_size();
@@ -95,7 +96,7 @@ impl Renderer {
             include_spirv!(concat!(env!("OUT_DIR"), "/shaders/fragment.spv")));
 
         let vertex_buffer = device.create_buffer_with_data(
-            bytemuck::cast_slice(TEST_VERT),
+            bytemuck::cast_slice(test_vert),
             BufferUsage::VERTEX
         );
 
@@ -302,7 +303,7 @@ impl Renderer {
             render_pass.set_pipeline(&self.render_pipeline);
             render_pass.set_bind_group(0, &self.texture_bind_group, &[]);
             render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-            render_pass.draw(0 .. TEST_VERT.len() as u32, 0 .. 1);
+            render_pass.draw(0 .. 6, 0 .. 1);
         }
 
         self.queue.submit(Some(encoder.finish()));

@@ -5,18 +5,12 @@ use std::io::prelude::*;
 use std::collections::HashMap;
 use shaderc::{Compiler, ShaderKind};
 use guillotiere::*;
-/*use texture_packer::{
-    TexturePacker,
-    TexturePackerConfig,
-    importer::ImageImporter,
-    exporter::ImageExporter
-};*/
 use image::{DynamicImage, GenericImage, GenericImageView};
 
 
 
 /// Builds the resources to be embedded. 
-/// There won't be any error handling here because it will never be executed by the user
+/// There won't be any error handling here because this will never be executed by the user
 fn main() {
     compile_shaders();
     texture_atlas();
@@ -46,7 +40,7 @@ fn compile_shaders() {
 }
 
 fn texture_atlas() {
-    // TODO: animations, normal maps
+    // TODO: normal maps
 
     // Cargo doesn't support rerun on directory content change, so we have to manually trigger this
     println!("cargo:rerun-if-changed=textures/touch-to-rebuild-texture-atlas");
@@ -54,43 +48,70 @@ fn texture_atlas() {
     let out_dir = Path::new(&env::var("OUT_DIR").unwrap()).to_owned();
    
     let mut size = Size::new(1024, 1024);
-    let mut atlas = AtlasAllocator::new(size);
-    let mut sprites = Vec::new();
+    let mut atlas_alloc = AtlasAllocator::new(size);
+    let mut map: HashMap<String, Vec<_>> = HashMap::new();
 
     for entry in walkdir::WalkDir::new("textures") {
         let entry = entry.unwrap();
         if entry.path().extension().map_or(false, |ext|ext=="png") {
             let id = entry.path().to_string_lossy();
-            let id = id["textures/".len() .. id.len() - ".png".len()]
+            // Turn path into a valid id
+            let mut id = id["textures/".len() .. id.len() - ".png".len()]
                 .replace(std::path::MAIN_SEPARATOR, "_")
                 .replace('-', "_")
                 .to_uppercase();
+
+            let index = if let Some((last_segment_start, _)) = id.rmatch_indices('_').next() {
+                if let Ok(index) = id[(last_segment_start+1)..].parse() {
+                    id.truncate(last_segment_start);
+                    index
+                } else { 0 }
+            } else { 0 };
+
             let image = image::open(&entry.path()).unwrap();
             // Why does it use signed integers?
             let image_size = Size::new(image.width() as i32, image.height() as i32);
-            if let Some(alloc) = atlas.allocate(image_size) {
-                sprites.push((alloc, id, image));
+
+            let insert = |map: &mut HashMap<String, Vec<_>>, alloc| {
+                if let Some(vec) = map.get_mut(&id) {
+                    if vec.len() <= index {
+                        vec.resize(index+1, None);
+                    }
+                    vec[index] = Some((alloc, image));
+                } else {
+                    let mut vec = vec![None; index+1];
+                    vec[index] = Some((alloc, image));
+                    map.insert(id, vec);
+                }
+            };
+
+            if let Some(alloc) = atlas_alloc.allocate(image_size) {
+                insert(&mut map, alloc);
             } else {
-                // Grow the image
+                // Grow the texture atlas dimensions
                 if size.height < size.width {
                     size.height *= 2
                 } else {
                     size.width *= 2
                 }
-                let changelist = atlas.resize_and_rearrange(size);
+                let changelist = atlas_alloc.resize_and_rearrange(size);
                 if changelist.failures.len() != 0 {
                     panic!();
                 }
                 for change in changelist.changes {
-                    for sprite in sprites.iter_mut() {
-                        // You know how Allocations have id's? Turns out change.old.id is wrong
-                        if sprite.0.rectangle == change.old.rectangle {
-                            sprite.0 = change.new;
-                            break;
+                    for (_, sprites) in map.iter_mut() {
+                        for sprite in sprites {
+                            if let Some(sprite) = sprite {
+                                // You know how Allocations have id's? Turns out change.old.id is wrong
+                                if sprite.0.rectangle == change.old.rectangle {
+                                    sprite.0 = change.new;
+                                    break;
+                                }
+                            }
                         }
                     }
                 }
-                sprites.push((atlas.allocate(image_size).unwrap(), id, image));
+                insert(&mut map, atlas_alloc.allocate(image_size).unwrap());
             }
         }
     }
@@ -98,10 +119,12 @@ fn texture_atlas() {
     let mut texture = DynamicImage::new_rgba8(size.width as u32, size.height as u32);
 
     // Blit sprites
-    for (alloc, id, image) in sprites.iter() {
-        for x in 0..image.width() {
-            for y in 0..image.height() {
-                texture.put_pixel(alloc.rectangle.min.x as u32 + x, alloc.rectangle.min.y as u32 + y, image.get_pixel(x, y));
+    for sprite in map.values().flat_map(|vec|vec.iter()) {
+        if let Some((alloc, image)) = sprite {
+            for x in 0..image.width() {
+                for y in 0..image.height() {
+                    texture.put_pixel(alloc.rectangle.min.x as u32 + x, alloc.rectangle.min.y as u32 + y, image.get_pixel(x, y));
+                }
             }
         }
     }
@@ -112,45 +135,23 @@ fn texture_atlas() {
     ).unwrap();
 
     // Export uv-coordinates in a form where it can be included in a rust file
-    let mut out_file = File::create(out_dir.join("uv-coords")).unwrap();
-    for (alloc, id, _) in sprites.iter() {
-        writeln!(out_file, "pub const {}: Sprite = Sprite {{center_x: {}f32, center_y: {}f32, width: {}f32, height: {}f32}};", 
-            id, alloc.rectangle.center().x, alloc.rectangle.center().y, alloc.rectangle.width(), alloc.rectangle.height()).unwrap()
-    }
-
-    /*let mut packer = TexturePacker::new_skyline(TexturePackerConfig {
-        max_width: 2048, // Why can't the texture packer choose these on its own? Libgdx was better.
-        max_height: 4096,
-        allow_rotation: false,
-        texture_outlines: false,
-        border_padding: 0, // By the way, this can make the image larger than max_width*max_height
-        texture_padding: 2,
-        trim: false
-    });
-
-    for entry in walkdir::WalkDir::new("textures") {
-        let entry = entry.unwrap();
-        if entry.path().extension().map_or(false, |ext|ext=="png") {
-            let id = entry.path().to_string_lossy();
-            let id = id["textures/".len() .. id.len() - ".png".len()]
-                .replace(std::path::MAIN_SEPARATOR, "_")
-                .replace('-', "_")
-                .to_uppercase();
-            let texture = ImageImporter::import_from_file(&entry.path()).unwrap();
-            packer.pack_own(id, texture).unwrap();
+    let mut out_file = File::create(out_dir.join("uv-coords.rs")).unwrap();
+    for (id, vec) in map {
+        if vec.len() == 1 {
+            let rectangle = vec[0].as_ref().unwrap().0.rectangle;
+            writeln!(out_file, "pub const {}: Sprite = Sprite {{center_x: {}f32, center_y: {}f32, width: {}f32, height: {}f32}};", 
+                id, rectangle.center().x, rectangle.center().y, rectangle.width(), rectangle.height()).unwrap()
+        } else {
+            writeln!(out_file, "pub const {}: &[Sprite] = &[", id).unwrap();
+            for sprite in vec {
+                if let Some(sprite) = sprite {
+                    let rectangle = sprite.0.rectangle;
+                    writeln!(out_file, "    Sprite {{center_x: {}f32, center_y: {}f32, width: {}f32, height: {}f32}},",
+                        rectangle.center().x, rectangle.center().y, rectangle.width(), rectangle.height()).unwrap()
+                }
+            }
+            writeln!(out_file, "];").unwrap();
         }
     }
 
-    // Export texture
-    ImageExporter::export(&packer).unwrap().write_to(
-        &mut File::create(out_dir.join("textures.png")).unwrap(), 
-        image::ImageFormat::Png)
-    .unwrap();
-
-    // Export uv-coordinates in a form where it can be included in a rust file
-    let mut out_file = File::create(out_dir.join("uv-coords")).unwrap();
-    for (id, sprite) in packer.get_frames() {
-        writeln!(out_file, "pub const {}: Sprite = Sprite {{center_x: {}f32, center_y: {}f32, width: {}f32, height: {}f32}};", 
-            id, sprite.frame.x, sprite.frame.y, sprite.frame.w, sprite.frame.h).unwrap()
-    }*/
 }
