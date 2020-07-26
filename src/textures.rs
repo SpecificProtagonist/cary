@@ -1,5 +1,6 @@
 #![allow(unused)]
 
+// Maybe reuse euler crate?
 #[derive(Copy, Clone)]
 pub struct Sprite {
     pub center_x: f32,

@@ -1,4 +1,7 @@
-use std::mem;
+use std::{
+    mem,
+    borrow::Cow,
+};
 use image::GenericImageView;
 use winit::window::Window;
 use wgpu::*;
@@ -17,21 +20,21 @@ unsafe impl bytemuck::Zeroable for Vertex {}
 
 impl Vertex {
     fn descriptor<'a>() -> VertexBufferDescriptor<'a> {
-        wgpu::VertexBufferDescriptor {
+        VertexBufferDescriptor {
             stride: mem::size_of::<Vertex>() as BufferAddress,
-            step_mode: wgpu::InputStepMode::Vertex,
-            attributes: &[
-                wgpu::VertexAttributeDescriptor {
+            step_mode: InputStepMode::Vertex,
+            attributes: Cow::Owned(vec![
+                VertexAttributeDescriptor {
                     offset: 0,
                     shader_location: 0,
-                    format: wgpu::VertexFormat::Float3,
+                    format: VertexFormat::Float3,
                 },
-                wgpu::VertexAttributeDescriptor {
+                VertexAttributeDescriptor {
                     offset: mem::size_of::<[f32; 3]>() as BufferAddress,
                     shader_location: 1,
-                    format: wgpu::VertexFormat::Float2,
+                    format: VertexFormat::Float2,
                 }
-            ]
+            ])
         }
     }
 }
@@ -63,89 +66,87 @@ impl Renderer {
         /* Set up device */
 
         let size = window.inner_size();
-        let surface = wgpu::Surface::create(window);
+        let instance = Instance::new(BackendBit::PRIMARY);
+        let surface = unsafe { instance.create_surface(window) }; // Window handle guaranteed valid -> safe
 
-        let adapter = wgpu::Adapter::request(
-            &wgpu::RequestAdapterOptions {
-                power_preference: wgpu::PowerPreference::Default,
+        let adapter = instance.request_adapter(
+            &RequestAdapterOptions {
+                power_preference: PowerPreference::Default,
                 compatible_surface: Some(&surface),
-            },
-            wgpu::BackendBit::PRIMARY,
+            }
         )
         .await
         .unwrap();
 
-        let (device, queue) = adapter.request_device(&wgpu::DeviceDescriptor {
-            extensions: wgpu::Extensions {
-                anisotropic_filtering: false,
-            },
-            limits: wgpu::Limits::default(),
-        })
-        .await;
+        let (device, queue) = adapter.request_device(&DeviceDescriptor {
+            features: Features::empty(),
+            limits: Limits::default(),
+            shader_validation: true // Will be removed later
+        }, None).await.unwrap();
 
 
         let (texture_bind_group, texture_bind_group_layout) = Self::create_texture(&device, &queue);
 
 
-        let vertex_shader = include_bytes!(concat!(env!("OUT_DIR"), "/shaders/vertex.spv"));
-        let vertexshader_module =
-            device.create_shader_module(&wgpu::read_spirv(std::io::Cursor::new(&vertex_shader[..])).unwrap());
+        let vertexshader_module = device.create_shader_module(
+            include_spirv!(concat!(env!("OUT_DIR"), "/shaders/vertex.spv")));
 
-        let fragment_shader = include_bytes!(concat!(env!("OUT_DIR"), "/shaders/fragment.spv"));
-        let fragment_shader_module =
-            device.create_shader_module(&wgpu::read_spirv(std::io::Cursor::new(&fragment_shader[..])).unwrap());
+        let fragment_shader_module = device.create_shader_module(
+            include_spirv!(concat!(env!("OUT_DIR"), "/shaders/fragment.spv")));
 
         let vertex_buffer = device.create_buffer_with_data(
             bytemuck::cast_slice(TEST_VERT),
             BufferUsage::VERTEX
         );
 
-        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            bind_group_layouts: &[&texture_bind_group_layout],
+        let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
+            bind_group_layouts: Cow::Owned(vec![&texture_bind_group_layout]),
+            push_constant_ranges: Cow::Owned(vec![])
         });
 
-        let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        let render_pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
             layout: &pipeline_layout,
-            vertex_stage: wgpu::ProgrammableStageDescriptor {
+            vertex_stage: ProgrammableStageDescriptor {
                 module: &vertexshader_module,
-                entry_point: "main",
+                entry_point: Cow::Borrowed("main"),
             },
-            fragment_stage: Some(wgpu::ProgrammableStageDescriptor {
+            fragment_stage: Some(ProgrammableStageDescriptor {
                 module: &fragment_shader_module,
-                entry_point: "main",
+                entry_point: Cow::Borrowed("main"),
             }),
-            rasterization_state: Some(wgpu::RasterizationStateDescriptor {
-                front_face: wgpu::FrontFace::Ccw,
-                cull_mode: wgpu::CullMode::None,
+            rasterization_state: Some(RasterizationStateDescriptor {
+                front_face: FrontFace::Ccw,
+                cull_mode: CullMode::None,
+                clamp_depth: false,
                 depth_bias: 0,
                 depth_bias_slope_scale: 0.0,
                 depth_bias_clamp: 0.0,
             }),
-            primitive_topology: wgpu::PrimitiveTopology::TriangleList,
-            color_states: &[wgpu::ColorStateDescriptor {
-                format: wgpu::TextureFormat::Bgra8UnormSrgb,
-                color_blend: wgpu::BlendDescriptor::REPLACE,
-                alpha_blend: wgpu::BlendDescriptor::REPLACE,
-                write_mask: wgpu::ColorWrite::ALL,
-            }],
+            primitive_topology: PrimitiveTopology::TriangleList,
+            color_states: Cow::Owned(vec![ColorStateDescriptor {
+                format: TextureFormat::Bgra8UnormSrgb,
+                color_blend: BlendDescriptor::REPLACE,
+                alpha_blend: BlendDescriptor::REPLACE,
+                write_mask: ColorWrite::ALL,
+            }]),
             depth_stencil_state: None,
-            vertex_state: wgpu::VertexStateDescriptor {
-                index_format: wgpu::IndexFormat::Uint16,
-                vertex_buffers: &[
+            vertex_state: VertexStateDescriptor {
+                index_format: IndexFormat::Uint16,
+                vertex_buffers: Cow::Owned(vec![
                     Vertex::descriptor()
-                ],
+                ]),
             },
             sample_count: 1,
             sample_mask: !0,
             alpha_to_coverage_enabled: false,
         });
 
-        let swap_chain_desc = wgpu::SwapChainDescriptor {
-            usage: wgpu::TextureUsage::OUTPUT_ATTACHMENT,
-            format: wgpu::TextureFormat::Bgra8UnormSrgb,
+        let swap_chain_desc = SwapChainDescriptor {
+            usage: TextureUsage::OUTPUT_ATTACHMENT,
+            format: TextureFormat::Bgra8UnormSrgb,
             width: size.width,
             height: size.height,
-            present_mode: wgpu::PresentMode::Mailbox,
+            present_mode: PresentMode::Mailbox,
         };
 
         let swap_chain = device.create_swap_chain(&surface, &swap_chain_desc);
@@ -166,23 +167,22 @@ impl Renderer {
     fn create_texture(device: &Device, queue: &Queue) -> (BindGroup, BindGroupLayout) {
         let texture_image = image::load_from_memory(include_bytes!(concat!(env!("OUT_DIR"), "/textures.png"))).unwrap();
         // All textures are stored as 3d, we represent our 2d texture by setting depth to 1.
-        let texture_size = wgpu::Extent3d {
+        let texture_size = Extent3d {
             width: texture_image.dimensions().0,
             height: texture_image.dimensions().1,
             depth: 1,
         };
 
-        let texture = device.create_texture(&wgpu::TextureDescriptor {
+        let texture = device.create_texture(&TextureDescriptor {
             size: texture_size,
-            array_layer_count: 1,
             mip_level_count: 1,
             sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba8UnormSrgb,
+            dimension: TextureDimension::D2,
+            format: TextureFormat::Rgba8UnormSrgb,
             // SAMPLED tells wgpu that we want to use this texture in shaders
             // COPY_DST means that we want to copy data to this texture
-            usage: wgpu::TextureUsage::SAMPLED | wgpu::TextureUsage::COPY_DST,
-            label: Some("texture-atlas"),
+            usage: TextureUsage::SAMPLED | TextureUsage::COPY_DST,
+            label: Some(Cow::Borrowed("texture-atlas")),
         });
 
         let texture_buffer = device.create_buffer_with_data(
@@ -190,78 +190,83 @@ impl Renderer {
             BufferUsage::COPY_SRC 
         );
 
-        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("texture-buffer-copy-encoder"),
+        let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+            label: Some(Cow::Borrowed("texture-buffer-copy-encoder")),
         });
 
         encoder.copy_buffer_to_texture(
-            wgpu::BufferCopyView {
+            BufferCopyView {
                 buffer: &texture_buffer,
-                offset: 0,
-                bytes_per_row: 4 * texture_size.width,
-                rows_per_image: texture_size.height,
+                layout: TextureDataLayout {
+                    offset: 0,
+                    bytes_per_row: 4 * texture_size.width,
+                    rows_per_image: texture_size.height,
+                }
             },
-            wgpu::TextureCopyView {
+            TextureCopyView {
                 texture: &texture,
                 mip_level: 0,
-                array_layer: 0,
-                origin: wgpu::Origin3d::ZERO,
+                origin: Origin3d::ZERO,
             },
             texture_size,
         );
 
-        queue.submit(&[encoder.finish()]);
+        queue.submit(Some(encoder.finish()));
 
         let texture_view = texture.create_default_view();
 
-        let texture_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-            address_mode_u: wgpu::AddressMode::ClampToEdge,
-            address_mode_v: wgpu::AddressMode::ClampToEdge,
-            address_mode_w: wgpu::AddressMode::ClampToEdge,
-            mag_filter: wgpu::FilterMode::Nearest,
-            min_filter: wgpu::FilterMode::Nearest,
-            mipmap_filter: wgpu::FilterMode::Nearest,
+        let texture_sampler = device.create_sampler(&SamplerDescriptor {
+            address_mode_u: AddressMode::ClampToEdge,
+            address_mode_v: AddressMode::ClampToEdge,
+            address_mode_w: AddressMode::ClampToEdge,
+            mag_filter: FilterMode::Nearest,
+            min_filter: FilterMode::Nearest,
+            mipmap_filter: FilterMode::Nearest,
             lod_min_clamp: -100.0,
             lod_max_clamp: 100.0,
-            compare: wgpu::CompareFunction::Always,
+            compare: None,
+            anisotropy_clamp: None,
+            label: Some(Cow::Borrowed("texture-sampler"))
         });
 
-        let texture_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            bindings: &[
-                wgpu::BindGroupLayoutEntry {
+        let texture_bind_group_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+            entries: Cow::Owned(vec![
+                BindGroupLayoutEntry {
                     binding: 0,
-                    visibility: wgpu::ShaderStage::FRAGMENT,
-                    ty: wgpu::BindingType::SampledTexture {
+                    visibility: ShaderStage::FRAGMENT,
+                    ty: BindingType::SampledTexture {
                         multisampled: false,
-                        dimension: wgpu::TextureViewDimension::D2,
-                        component_type: wgpu::TextureComponentType::Uint,
+                        dimension: TextureViewDimension::D2,
+                        component_type: TextureComponentType::Uint,
                     },
+                    count: None
                 },
-                wgpu::BindGroupLayoutEntry {
+                BindGroupLayoutEntry {
                     binding: 1,
-                    visibility: wgpu::ShaderStage::FRAGMENT,
-                    ty: wgpu::BindingType::Sampler {
+                    visibility: ShaderStage::FRAGMENT,
+                    ty: BindingType::Sampler {
                         comparison: false,
                     },
+                    count: None
                 },
-            ],
-            label: Some("texture-bind-group-layout"),
+            ]),
+            label: Some(Cow::Borrowed("texture-bind-group-layout")),
         });
 
         (
-            device.create_bind_group(&wgpu::BindGroupDescriptor {
+            device.create_bind_group(&BindGroupDescriptor {
                 layout: &texture_bind_group_layout,
-                bindings: &[
-                    wgpu::Binding {
+                entries: Cow::Owned(vec![
+                    BindGroupEntry {
                         binding: 0,
-                        resource: wgpu::BindingResource::TextureView(&texture_view),
+                        resource: BindingResource::TextureView(&texture_view),
                     },
-                    wgpu::Binding {
+                    BindGroupEntry {
                         binding: 1,
-                        resource: wgpu::BindingResource::Sampler(&texture_sampler),
+                        resource: BindingResource::Sampler(&texture_sampler),
                     }
-                ],
-                label: Some("texture-bind-group"),
+                ]),
+                label: Some(Cow::Borrowed("texture-bind-group")),
             }),
             texture_bind_group_layout,
         )
@@ -277,28 +282,29 @@ impl Renderer {
 
     pub fn render(&mut self) {
         let frame = self.swap_chain
-            .get_next_texture()
+            .get_current_frame()
             .expect("Timeout when acquiring next swap chain texture");
-        let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+        let mut encoder = self.device.create_command_encoder(&CommandEncoderDescriptor {
             label: None,
         });
         {
-            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                color_attachments: &[wgpu::RenderPassColorAttachmentDescriptor {
-                    attachment: &frame.view,
+            let mut render_pass = encoder.begin_render_pass(&RenderPassDescriptor {
+                color_attachments: Cow::Owned(vec![RenderPassColorAttachmentDescriptor {
+                    attachment: &frame.output.view,
                     resolve_target: None,
-                    load_op: wgpu::LoadOp::Clear,
-                    store_op: wgpu::StoreOp::Store,
-                    clear_color: wgpu::Color::GREEN,
-                }],
+                    ops: Operations {
+                        load: LoadOp::Clear(Color::RED),
+                        store: true
+                    }
+                }]),
                 depth_stencil_attachment: None,
             });
             render_pass.set_pipeline(&self.render_pipeline);
-            render_pass.set_bind_group(0, &self.texture_bind_group, &[]); // NEW!
-            render_pass.set_vertex_buffer(0, &self.vertex_buffer, 0, 0);
+            render_pass.set_bind_group(0, &self.texture_bind_group, &[]);
+            render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
             render_pass.draw(0 .. TEST_VERT.len() as u32, 0 .. 1);
         }
 
-        self.queue.submit(&[encoder.finish()]);
+        self.queue.submit(Some(encoder.finish()));
     }
 }
