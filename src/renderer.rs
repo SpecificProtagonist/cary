@@ -5,40 +5,21 @@ use std::{
 use image::GenericImageView;
 use winit::window::Window;
 use wgpu::*;
-use super::textures;
+use super::textures::{self, Sprite};
+use super::Vec2;
 
 
 
 #[repr(C)]
 #[derive(Copy, Clone)]
-struct Vertex {
-    position: [f32; 3],
-    tex_coords: [f32; 2]
-}
-
-unsafe impl bytemuck::Pod for Vertex {}
-unsafe impl bytemuck::Zeroable for Vertex {}
-
-impl Vertex {
-    fn descriptor<'a>() -> VertexBufferDescriptor<'a> {
-        VertexBufferDescriptor {
-            stride: mem::size_of::<Vertex>() as BufferAddress,
-            step_mode: InputStepMode::Vertex,
-            attributes: Cow::Owned(vec![
-                VertexAttributeDescriptor {
-                    offset: 0,
-                    shader_location: 0,
-                    format: VertexFormat::Float3,
-                },
-                VertexAttributeDescriptor {
-                    offset: mem::size_of::<[f32; 3]>() as BufferAddress,
-                    shader_location: 1,
-                    format: VertexFormat::Float2,
-                }
-            ])
-        }
-    }
-}
+struct SpriteInstance {
+    position: Vec2,
+    size: Vec2,
+    uv_center: Vec2,
+    layer: f32
+} 
+unsafe impl bytemuck::Pod for SpriteInstance {}
+unsafe impl bytemuck::Zeroable for SpriteInstance {}
 
 
 
@@ -48,22 +29,16 @@ pub struct Renderer {
     device: Device,
     queue: Queue,
     texture_bind_group: BindGroup,
-    vertex_buffer: Buffer,
     render_pipeline: RenderPipeline,
     swap_chain: SwapChain,
-    swap_chain_desc: SwapChainDescriptor
+    swap_chain_desc: SwapChainDescriptor,
+
+    vertex_buffer: Buffer,
+    instances: Vec<SpriteInstance>,
 }
 
 impl Renderer {
     pub async fn create(window: &Window) -> Self {
-        let test_vert = &[
-            Vertex { position: [-0.5,  0.5, 0.0], tex_coords: [1085.0/2048.0, 543.0/1024.0] },
-            Vertex { position: [-0.5, -0.5, 0.0], tex_coords: [1085.0/2048.0, 863.0/1024.0] },
-            Vertex { position: [ 0.5,  0.5, 0.0], tex_coords: [1654.0/2048.0, 543.0/1024.0] },
-            Vertex { position: [-0.5, -0.5, 0.0], tex_coords: [1085.0/2048.0, 863.0/1024.0] },
-            Vertex { position: [ 0.5, -0.5, 0.0], tex_coords: [1654.0/2048.0, 863.0/1024.0] },
-            Vertex { position: [ 0.5,  0.5, 0.0], tex_coords: [1654.0/2048.0, 543.0/1024.0] }
-        ];
         /* Set up device */
 
         let size = window.inner_size();
@@ -85,20 +60,13 @@ impl Renderer {
             shader_validation: true // Will be removed later
         }, None).await.unwrap();
 
-
         let (texture_bind_group, texture_bind_group_layout) = Self::create_texture(&device, &queue);
 
-
-        let vertexshader_module = device.create_shader_module(
+        let vertex_shader_module = device.create_shader_module(
             include_spirv!(concat!(env!("OUT_DIR"), "/shaders/vertex.spv")));
 
         let fragment_shader_module = device.create_shader_module(
             include_spirv!(concat!(env!("OUT_DIR"), "/shaders/fragment.spv")));
-
-        let vertex_buffer = device.create_buffer_with_data(
-            bytemuck::cast_slice(test_vert),
-            BufferUsage::VERTEX
-        );
 
         let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
             bind_group_layouts: Cow::Owned(vec![&texture_bind_group_layout]),
@@ -108,7 +76,7 @@ impl Renderer {
         let render_pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
             layout: &pipeline_layout,
             vertex_stage: ProgrammableStageDescriptor {
-                module: &vertexshader_module,
+                module: &vertex_shader_module,
                 entry_point: Cow::Borrowed("main"),
             },
             fragment_stage: Some(ProgrammableStageDescriptor {
@@ -134,7 +102,49 @@ impl Renderer {
             vertex_state: VertexStateDescriptor {
                 index_format: IndexFormat::Uint16,
                 vertex_buffers: Cow::Owned(vec![
-                    Vertex::descriptor()
+                    // Instance buffer
+                    VertexBufferDescriptor {
+                        stride: mem::size_of::<SpriteInstance>() as BufferAddress,
+                        step_mode: InputStepMode::Instance,
+                        attributes: Cow::Owned(vec![
+                            // Position
+                            VertexAttributeDescriptor {
+                                offset: 0,
+                                shader_location: 1,
+                                format: VertexFormat::Float2,
+                            },
+                            // Size
+                            VertexAttributeDescriptor {
+                                offset: std::mem::size_of::<f32>() as BufferAddress * 2,
+                                shader_location: 2,
+                                format: VertexFormat::Float2,
+                            },
+                            // UV-Coordinates center
+                            VertexAttributeDescriptor {
+                                offset: std::mem::size_of::<f32>() as BufferAddress * 4,
+                                shader_location: 3,
+                                format: VertexFormat::Float2,
+                            },
+                            // Layer
+                            VertexAttributeDescriptor {
+                                offset: std::mem::size_of::<f32>() as BufferAddress * 6,
+                                shader_location: 4,
+                                format: VertexFormat::Float,
+                            }
+                        ])
+                    },
+                    // Vertex buffer
+                    VertexBufferDescriptor {
+                        stride: mem::size_of::<[f32; 2]>() as BufferAddress,
+                        step_mode: InputStepMode::Vertex,
+                        attributes: Cow::Owned(vec![
+                            VertexAttributeDescriptor {
+                                offset: 0,
+                                shader_location: 0,
+                                format: VertexFormat::Float2,
+                            }
+                        ])
+                    }
                 ]),
             },
             sample_count: 1,
@@ -152,18 +162,32 @@ impl Renderer {
 
         let swap_chain = device.create_swap_chain(&surface, &swap_chain_desc);
 
+        let vertex_buffer = device.create_buffer_with_data(
+            bytemuck::cast_slice(&[
+                [-0.5_f32,  0.5_f32],
+                [-0.5_f32, -0.5_f32],
+                [ 0.5_f32,  0.5_f32],
+                [-0.5_f32, -0.5_f32],
+                [ 0.5_f32, -0.5_f32],
+                [ 0.5_f32,  0.5_f32]
+            ]),
+            BufferUsage::VERTEX
+        );
 
         Renderer {
             surface,
             device,
             queue,
             texture_bind_group,
-            vertex_buffer,
             render_pipeline,
             swap_chain,
-            swap_chain_desc
+            swap_chain_desc,
+
+            vertex_buffer,
+            instances: Vec::new()
         }
     }
+
 
     fn create_texture(device: &Device, queue: &Queue) -> (BindGroup, BindGroupLayout) {
         let texture_image = image::load_from_memory(include_bytes!(concat!(env!("OUT_DIR"), "/textures.png"))).unwrap();
@@ -282,6 +306,14 @@ impl Renderer {
     }
 
     pub fn render(&mut self) {
+        // TEST
+        self.draw(Vec2(0.3,0.3), textures::ITEM_CONSUMABLE_HEALTH_POTION, 0.5);
+
+        let instance_buffer = self.device.create_buffer_with_data(
+            bytemuck::cast_slice(&self.instances), 
+            BufferUsage::VERTEX
+        );
+
         let frame = self.swap_chain
             .get_current_frame()
             .expect("Timeout when acquiring next swap chain texture");
@@ -294,7 +326,7 @@ impl Renderer {
                     attachment: &frame.output.view,
                     resolve_target: None,
                     ops: Operations {
-                        load: LoadOp::Clear(Color::RED),
+                        load: LoadOp::Clear(Color::BLUE),
                         store: true
                     }
                 }]),
@@ -302,10 +334,15 @@ impl Renderer {
             });
             render_pass.set_pipeline(&self.render_pipeline);
             render_pass.set_bind_group(0, &self.texture_bind_group, &[]);
-            render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-            render_pass.draw(0 .. 6, 0 .. 1);
+            render_pass.set_vertex_buffer(0, instance_buffer.slice(..));
+            render_pass.set_vertex_buffer(1, self.vertex_buffer.slice(..));
+            render_pass.draw(0..6, 0..(self.instances.len() as u32));
         }
-
         self.queue.submit(Some(encoder.finish()));
+        
+    }
+
+    pub fn draw(&mut self, pos: Vec2, sprite: Sprite, layer: f32) {
+        self.instances.push(SpriteInstance {position: pos, size: Vec2(1.0, 1.0), uv_center: sprite.center, layer})
     }
 }

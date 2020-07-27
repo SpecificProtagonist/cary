@@ -139,14 +139,14 @@ fn texture_atlas() {
     for (id, vec) in map {
         if vec.len() == 1 {
             let rectangle = vec[0].as_ref().unwrap().0.rectangle;
-            writeln!(out_file, "pub const {}: Sprite = Sprite {{center_x: {}f32, center_y: {}f32, width: {}f32, height: {}f32}};", 
+            writeln!(out_file, "pub const {}: Sprite = Sprite {{center: Vec2({}f32, {}f32), size: Vec2({}f32, {}f32)}};", 
                 id, rectangle.center().x, rectangle.center().y, rectangle.width(), rectangle.height()).unwrap()
         } else {
             writeln!(out_file, "pub const {}: &[Sprite] = &[", id).unwrap();
             for sprite in vec {
                 if let Some(sprite) = sprite {
                     let rectangle = sprite.0.rectangle;
-                    writeln!(out_file, "    Sprite {{center_x: {}f32, center_y: {}f32, width: {}f32, height: {}f32}},",
+                    writeln!(out_file, "    Sprite {{center: Vec2({}f32, {}f32), size: Vec2({}f32, {}f32)}},",
                         rectangle.center().x, rectangle.center().y, rectangle.width(), rectangle.height()).unwrap()
                 }
             }
