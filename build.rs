@@ -136,7 +136,9 @@ fn texture_atlas() {
 
     // Export uv-coordinates in a form where it can be included in a rust file
     let mut out_file = File::create(out_dir.join("uv-coords.rs")).unwrap();
-    for (id, vec) in map {
+    writeln!(out_file, "pub const UV_COORDS_FACTOR: Vec2 = Vec2({}f32, {}f32);",
+        1.0/(size.width as f32), 1.0/(size.height as f32)).unwrap();
+    for (id, vec) in &map {
         if vec.len() == 1 {
             let rectangle = vec[0].as_ref().unwrap().0.rectangle;
             writeln!(out_file, "pub const {}: Sprite = Sprite {{center: Vec2({}f32, {}f32), size: Vec2({}f32, {}f32)}};", 
@@ -148,10 +150,11 @@ fn texture_atlas() {
                     let rectangle = sprite.0.rectangle;
                     writeln!(out_file, "    Sprite {{center: Vec2({}f32, {}f32), size: Vec2({}f32, {}f32)}},",
                         rectangle.center().x, rectangle.center().y, rectangle.width(), rectangle.height()).unwrap()
+                } else {
+                    panic!("Missing animation frame for {}", id);
                 }
             }
             writeln!(out_file, "];").unwrap();
         }
     }
-
 }

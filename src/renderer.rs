@@ -10,12 +10,14 @@ use super::Vec2;
 
 
 
+
 #[repr(C)]
 #[derive(Copy, Clone)]
 struct SpriteInstance {
-    position: Vec2,
+    pos: Vec2,
     size: Vec2,
     uv_center: Vec2,
+    uv_size: Vec2,
     layer: f32
 } 
 unsafe impl bytemuck::Pod for SpriteInstance {}
@@ -32,9 +34,14 @@ pub struct Renderer {
     render_pipeline: RenderPipeline,
     swap_chain: SwapChain,
     swap_chain_desc: SwapChainDescriptor,
+    /*uniform_buffer: Buffer,
+    uniform_bind_group: BindGroup,*/
 
     vertex_buffer: Buffer,
     instances: Vec<SpriteInstance>,
+
+    camera_pos: Vec2,
+    camera_size: f32
 }
 
 impl Renderer {
@@ -68,8 +75,39 @@ impl Renderer {
         let fragment_shader_module = device.create_shader_module(
             include_spirv!(concat!(env!("OUT_DIR"), "/shaders/fragment.spv")));
 
+        /*let uniform_buffer = device.create_buffer_with_data(
+            bytemuck::cast_slice(&[2048f32, 1024f32]),
+            wgpu::BufferUsage::UNIFORM | wgpu::BufferUsage::COPY_DST,
+        );
+        
+        let uniform_bind_group_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+            entries: Cow::Owned(vec![
+                BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: ShaderStage::VERTEX,
+                    ty: BindingType::UniformBuffer {
+                        dynamic: false,
+                        min_binding_size: None
+                    },
+                    count: None
+                }
+            ]),
+            label: None
+        });
+
+        let uniform_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: &uniform_bind_group_layout,
+            entries: Cow::Owned(vec![
+                BindGroupEntry {
+                    binding: 0,
+                    resource: BindingResource::Buffer(uniform_buffer.slice(..))
+                }
+            ]),
+            label: None
+        });*/
+
         let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
-            bind_group_layouts: Cow::Owned(vec![&texture_bind_group_layout]),
+            bind_group_layouts: Cow::Owned(vec![&texture_bind_group_layout, /*&uniform_bind_group_layout*/]),
             push_constant_ranges: Cow::Owned(vec![])
         });
 
@@ -119,16 +157,22 @@ impl Renderer {
                                 shader_location: 2,
                                 format: VertexFormat::Float2,
                             },
-                            // UV-Coordinates center
+                            // UV-coordinates center
                             VertexAttributeDescriptor {
                                 offset: std::mem::size_of::<f32>() as BufferAddress * 4,
                                 shader_location: 3,
                                 format: VertexFormat::Float2,
                             },
-                            // Layer
+                            // UV-coordinates size
                             VertexAttributeDescriptor {
                                 offset: std::mem::size_of::<f32>() as BufferAddress * 6,
                                 shader_location: 4,
+                                format: VertexFormat::Float2,
+                            },
+                            // Layer
+                            VertexAttributeDescriptor {
+                                offset: std::mem::size_of::<f32>() as BufferAddress * 8,
+                                shader_location: 5,
                                 format: VertexFormat::Float,
                             }
                         ])
@@ -182,9 +226,14 @@ impl Renderer {
             render_pipeline,
             swap_chain,
             swap_chain_desc,
+            /*uniform_buffer,
+            uniform_bind_group,*/
 
             vertex_buffer,
-            instances: Vec::new()
+            instances: Vec::new(),
+
+            camera_pos: Vec2(0.0, 0.0),
+            camera_size: 5.0
         }
     }
 
@@ -273,7 +322,7 @@ impl Renderer {
                         comparison: false,
                     },
                     count: None
-                },
+                }, 
             ]),
             label: Some(Cow::Borrowed("texture-bind-group-layout")),
         });
@@ -307,7 +356,7 @@ impl Renderer {
 
     pub fn render(&mut self) {
         // TEST
-        self.draw(Vec2(0.3,0.3), textures::ITEM_CONSUMABLE_HEALTH_POTION, 0.5);
+        self.draw(Vec2(0.3,0.3), true, textures::PLAYER_WALK[0], 0.5);
 
         let instance_buffer = self.device.create_buffer_with_data(
             bytemuck::cast_slice(&self.instances), 
@@ -334,6 +383,7 @@ impl Renderer {
             });
             render_pass.set_pipeline(&self.render_pipeline);
             render_pass.set_bind_group(0, &self.texture_bind_group, &[]);
+            //render_pass.set_bind_group(1, &self.uniform_bind_group, &[]);
             render_pass.set_vertex_buffer(0, instance_buffer.slice(..));
             render_pass.set_vertex_buffer(1, self.vertex_buffer.slice(..));
             render_pass.draw(0..6, 0..(self.instances.len() as u32));
@@ -342,7 +392,18 @@ impl Renderer {
         
     }
 
-    pub fn draw(&mut self, pos: Vec2, sprite: Sprite, layer: f32) {
-        self.instances.push(SpriteInstance {position: pos, size: Vec2(1.0, 1.0), uv_center: sprite.center, layer})
+    pub fn draw(&mut self, pos: Vec2, bottom: bool, sprite: Sprite, layer: f32) {
+        let size_real = sprite.size / textures::PIXELS_PER_TILE;
+        let pos = Vec2(pos.0, pos.1 + if bottom {size_real.1/2.0} else {0.0});
+        // Maybe do this in a shader?
+        let resize = Vec2(self.swap_chain_desc.height as f32 / self.swap_chain_desc.width as f32, 1.0) / self.camera_size;
+        // TODO: culling
+        self.instances.push(SpriteInstance {
+            pos: (pos-self.camera_pos) * resize,
+            size: size_real * resize,
+            uv_center: sprite.center * textures::UV_COORDS_FACTOR,
+            uv_size: sprite.size * textures::UV_COORDS_FACTOR,
+            layer
+        });
     }
 }
