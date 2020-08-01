@@ -22,21 +22,21 @@ fn compile_shaders() {
 
     let mut compiler = Compiler::new().unwrap();
 
-    // Vertex
-    println!("cargo:rerun-if-changed=src/shaders/vertex.glsl");
-    let vertex_spirv = compiler.compile_into_spirv(
-        include_str!("src/shaders/vertex.glsl"), ShaderKind::Vertex, "vertex.glsl", "main", None
-    ).unwrap();
-    File::create(out_dir.join("vertex.spv")).unwrap()
-        .write_all(vertex_spirv.as_binary_u8()).unwrap();
+    let mut compile_shader = |name, shader_kind| {
+        let src_file = format!("src/shaders/{}.glsl", name);
+        println!("cargo:rerun-if-changed={}", src_file);
+        let vertex_spirv = compiler.compile_into_spirv(
+            &std::fs::read_to_string(src_file).unwrap(), 
+            shader_kind, name, "main", None
+        ).unwrap();
+        File::create(out_dir.join(format!("{}.spv", name))).unwrap()
+            .write_all(vertex_spirv.as_binary_u8()).unwrap();
+    };
 
-    // Fragment
-    println!("cargo:rerun-if-changed=src/shaders/fragment.glsl");
-    let fragment_spirv = compiler.compile_into_spirv(
-        include_str!("src/shaders/fragment.glsl"), ShaderKind::Fragment, "fragment.glsl", "main", None
-    ).unwrap();
-    File::create(out_dir.join("fragment.spv")).unwrap()
-        .write_all(fragment_spirv.as_binary_u8()).unwrap();
+    compile_shader("fragment_light", ShaderKind::Fragment);
+    compile_shader("vertex_light", ShaderKind::Vertex);
+    compile_shader("fragment_world", ShaderKind::Fragment);
+    compile_shader("vertex_world", ShaderKind::Vertex);
 }
 
 fn texture_atlas() {
@@ -129,6 +129,7 @@ fn texture_atlas() {
         }
     }
 
+    // Write texture. TODO: check if it can be compressed further
     texture.write_to(
         &mut File::create(out_dir.join("textures.png")).unwrap(), 
         image::ImageFormat::Png

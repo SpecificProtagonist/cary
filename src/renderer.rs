@@ -9,6 +9,8 @@ use super::textures::{self, Sprite};
 use super::Vec2;
 
 
+// TODO: HSV
+pub struct Rgb(f32, f32, f32);
 
 
 #[repr(C)]
@@ -23,6 +25,17 @@ struct SpriteInstance {
 unsafe impl bytemuck::Pod for SpriteInstance {}
 unsafe impl bytemuck::Zeroable for SpriteInstance {}
 
+#[repr(C)]
+#[derive(Copy, Clone)]
+struct LightInstance {
+    pos: Vec2,
+    size: Vec2,
+    uv_center: Vec2,
+    uv_size: Vec2,
+    color: (f32, f32, f32)
+} 
+unsafe impl bytemuck::Pod for LightInstance {}
+unsafe impl bytemuck::Zeroable for LightInstance {}
 
 
 
@@ -30,15 +43,21 @@ pub struct Renderer {
     surface: Surface,
     device: Device,
     queue: Queue,
-    texture_bind_group: BindGroup,
-    render_pipeline: RenderPipeline,
+    tex_bind_group: BindGroup,
+    tex_light_bind_group_layout: BindGroupLayout,
+    tex_light_bind_group: BindGroup,
+    render_pipeline_lights: RenderPipeline,
+    render_pipeline_world: RenderPipeline,
+    light_tex_view: TextureView,
+    depth_tex_view: TextureView,
     swap_chain: SwapChain,
     swap_chain_desc: SwapChainDescriptor,
     /*uniform_buffer: Buffer,
     uniform_bind_group: BindGroup,*/
 
     vertex_buffer: Buffer,
-    instances: Vec<SpriteInstance>,
+    light_instances: Vec<LightInstance>,
+    sprite_instances: Vec<SpriteInstance>,
 
     camera_pos: Vec2,
     camera_size: f32
@@ -67,24 +86,43 @@ impl Renderer {
             shader_validation: true // Will be removed later
         }, None).await.unwrap();
 
-        let (texture_bind_group, texture_bind_group_layout) = Self::create_texture(&device, &queue);
+        let (tex_bind_group, tex_bind_group_layout) = Self::load_sprite_texture(&device, &queue);
 
-        let vertex_shader_module = device.create_shader_module(
-            include_spirv!(concat!(env!("OUT_DIR"), "/shaders/vertex.spv")));
+        let vertex_shader_light = device.create_shader_module(
+            include_spirv!(concat!(env!("OUT_DIR"), "/shaders/vertex_light.spv")));
 
-        let fragment_shader_module = device.create_shader_module(
-            include_spirv!(concat!(env!("OUT_DIR"), "/shaders/fragment.spv")));
+        let fragment_shader_light = device.create_shader_module(
+            include_spirv!(concat!(env!("OUT_DIR"), "/shaders/fragment_light.spv")));
 
-        /*let uniform_buffer = device.create_buffer_with_data(
-            bytemuck::cast_slice(&[2048f32, 1024f32]),
-            wgpu::BufferUsage::UNIFORM | wgpu::BufferUsage::COPY_DST,
-        );
-        
-        let uniform_bind_group_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+        let vertex_shader_world = device.create_shader_module(
+            include_spirv!(concat!(env!("OUT_DIR"), "/shaders/vertex_world.spv")));
+
+        let fragment_shader_world = device.create_shader_module(
+            include_spirv!(concat!(env!("OUT_DIR"), "/shaders/fragment_world.spv")));
+
+        let tex_light_bind_group_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
             entries: Cow::Owned(vec![
                 BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: ShaderStage::FRAGMENT,
+                    ty: BindingType::SampledTexture {
+                        multisampled: false,
+                        dimension: TextureViewDimension::D2,
+                        component_type: TextureComponentType::Uint,
+                    },
+                    count: None
+                },
+                BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: ShaderStage::FRAGMENT,
+                    ty: BindingType::Sampler {
+                        comparison: false,
+                    },
+                    count: None
+                },
+                BindGroupLayoutEntry {
                     binding: 2,
-                    visibility: ShaderStage::VERTEX,
+                    visibility: ShaderStage::FRAGMENT,
                     ty: BindingType::UniformBuffer {
                         dynamic: false,
                         min_binding_size: None
@@ -95,30 +133,108 @@ impl Renderer {
             label: None
         });
 
-        let uniform_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            layout: &uniform_bind_group_layout,
-            entries: Cow::Owned(vec![
-                BindGroupEntry {
-                    binding: 0,
-                    resource: BindingResource::Buffer(uniform_buffer.slice(..))
-                }
-            ]),
-            label: None
-        });*/
+        let (tex_light_bind_group, light_tex_view, depth_tex_view) 
+            = Self::create_light_and_depth_texture(&device, &tex_light_bind_group_layout, size.width, size.height);
 
-        let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
-            bind_group_layouts: Cow::Owned(vec![&texture_bind_group_layout, /*&uniform_bind_group_layout*/]),
-            push_constant_ranges: Cow::Owned(vec![])
-        });
-
-        let render_pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
-            layout: &pipeline_layout,
+        let render_pipeline_lights = device.create_render_pipeline(&RenderPipelineDescriptor {
+            layout: &device.create_pipeline_layout(&PipelineLayoutDescriptor {
+                bind_group_layouts: Cow::Owned(vec![&tex_bind_group_layout]),
+                push_constant_ranges: Cow::Owned(vec![])
+            }),
             vertex_stage: ProgrammableStageDescriptor {
-                module: &vertex_shader_module,
+                module: &vertex_shader_light,
                 entry_point: Cow::Borrowed("main"),
             },
             fragment_stage: Some(ProgrammableStageDescriptor {
-                module: &fragment_shader_module,
+                module: &fragment_shader_light,
+                entry_point: Cow::Borrowed("main"),
+            }),
+            rasterization_state: Some(RasterizationStateDescriptor {
+                front_face: FrontFace::Ccw,
+                cull_mode: CullMode::None,
+                clamp_depth: false,
+                depth_bias: 0,
+                depth_bias_slope_scale: 0.0,
+                depth_bias_clamp: 0.0,
+            }),
+            primitive_topology: PrimitiveTopology::TriangleList,
+            color_states: Cow::Owned(vec![ColorStateDescriptor {
+                format: TextureFormat::Bgra8UnormSrgb,
+                color_blend: BlendDescriptor { src_factor: BlendFactor::One, dst_factor: BlendFactor::One, operation: BlendOperation::Add},
+                alpha_blend: BlendDescriptor::REPLACE,
+                write_mask: ColorWrite::ALL,
+            }]),
+            depth_stencil_state: None,
+            vertex_state: VertexStateDescriptor {
+                index_format: IndexFormat::Uint16,
+                vertex_buffers: Cow::Owned(vec![
+                    // Instance buffer
+                    VertexBufferDescriptor {
+                        stride: mem::size_of::<LightInstance>() as BufferAddress,
+                        step_mode: InputStepMode::Instance,
+                        attributes: Cow::Owned(vec![
+                            // Position
+                            VertexAttributeDescriptor {
+                                offset: 0,
+                                shader_location: 1,
+                                format: VertexFormat::Float2,
+                            },
+                            // Size
+                            VertexAttributeDescriptor {
+                                offset: std::mem::size_of::<f32>() as BufferAddress * 2,
+                                shader_location: 2,
+                                format: VertexFormat::Float2,
+                            },
+                            // UV-coordinates center
+                            VertexAttributeDescriptor {
+                                offset: std::mem::size_of::<f32>() as BufferAddress * 4,
+                                shader_location: 3,
+                                format: VertexFormat::Float2,
+                            },
+                            // UV-coordinates size
+                            VertexAttributeDescriptor {
+                                offset: std::mem::size_of::<f32>() as BufferAddress * 6,
+                                shader_location: 4,
+                                format: VertexFormat::Float2,
+                            },
+                            // Color
+                            VertexAttributeDescriptor {
+                                offset: std::mem::size_of::<f32>() as BufferAddress * 8,
+                                shader_location: 5,
+                                format: VertexFormat::Float3,
+                            }
+                        ])
+                    },
+                    // Vertex buffer
+                    VertexBufferDescriptor {
+                        stride: mem::size_of::<[f32; 2]>() as BufferAddress,
+                        step_mode: InputStepMode::Vertex,
+                        attributes: Cow::Owned(vec![
+                            VertexAttributeDescriptor {
+                                offset: 0,
+                                shader_location: 0,
+                                format: VertexFormat::Float2,
+                            }
+                        ])
+                    }
+                ]),
+            },
+            sample_count: 1,
+            sample_mask: !0,
+            alpha_to_coverage_enabled: false,
+        });
+
+        let render_pipeline_world = device.create_render_pipeline(&RenderPipelineDescriptor {
+            layout: &device.create_pipeline_layout(&PipelineLayoutDescriptor {
+                bind_group_layouts: Cow::Owned(vec![&tex_bind_group_layout, &tex_light_bind_group_layout /*, &uniform_bind_group_layout*/]),
+                push_constant_ranges: Cow::Owned(vec![])
+            }),
+            vertex_stage: ProgrammableStageDescriptor {
+                module: &vertex_shader_world,
+                entry_point: Cow::Borrowed("main"),
+            },
+            fragment_stage: Some(ProgrammableStageDescriptor {
+                module: &fragment_shader_world,
                 entry_point: Cow::Borrowed("main"),
             }),
             rasterization_state: Some(RasterizationStateDescriptor {
@@ -136,7 +252,15 @@ impl Renderer {
                 alpha_blend: BlendDescriptor::REPLACE,
                 write_mask: ColorWrite::ALL,
             }]),
-            depth_stencil_state: None,
+            depth_stencil_state: Some(wgpu::DepthStencilStateDescriptor {
+                format: TextureFormat::Depth32Float,
+                depth_write_enabled: true,
+                depth_compare: wgpu::CompareFunction::Less,
+                stencil_front: wgpu::StencilStateFaceDescriptor::IGNORE,
+                stencil_back: wgpu::StencilStateFaceDescriptor::IGNORE,
+                stencil_read_mask: 0,
+                stencil_write_mask: 0,
+            }),
             vertex_state: VertexStateDescriptor {
                 index_format: IndexFormat::Uint16,
                 vertex_buffers: Cow::Owned(vec![
@@ -222,15 +346,21 @@ impl Renderer {
             surface,
             device,
             queue,
-            texture_bind_group,
-            render_pipeline,
+            tex_bind_group,
+            tex_light_bind_group_layout,
+            tex_light_bind_group,
+            render_pipeline_lights,
+            render_pipeline_world,
+            light_tex_view: light_tex_view,
+            depth_tex_view: depth_tex_view,
             swap_chain,
             swap_chain_desc,
             /*uniform_buffer,
             uniform_bind_group,*/
 
             vertex_buffer,
-            instances: Vec::new(),
+            light_instances: Vec::new(),
+            sprite_instances: Vec::new(),
 
             camera_pos: Vec2(0.0, 0.0),
             camera_size: 5.0
@@ -238,7 +368,7 @@ impl Renderer {
     }
 
 
-    fn create_texture(device: &Device, queue: &Queue) -> (BindGroup, BindGroupLayout) {
+    fn load_sprite_texture(device: &Device, queue: &Queue) -> (BindGroup, BindGroupLayout) {
         let texture_image = image::load_from_memory(include_bytes!(concat!(env!("OUT_DIR"), "/textures.png"))).unwrap();
         // All textures are stored as 3d, we represent our 2d texture by setting depth to 1.
         let texture_size = Extent3d {
@@ -256,7 +386,7 @@ impl Renderer {
             // SAMPLED tells wgpu that we want to use this texture in shaders
             // COPY_DST means that we want to copy data to this texture
             usage: TextureUsage::SAMPLED | TextureUsage::COPY_DST,
-            label: Some(Cow::Borrowed("texture-atlas")),
+            label: None
         });
 
         let texture_buffer = device.create_buffer_with_data(
@@ -265,7 +395,7 @@ impl Renderer {
         );
 
         let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
-            label: Some(Cow::Borrowed("texture-buffer-copy-encoder")),
+            label: None
         });
 
         encoder.copy_buffer_to_texture(
@@ -300,7 +430,7 @@ impl Renderer {
             lod_max_clamp: 100.0,
             compare: None,
             anisotropy_clamp: None,
-            label: Some(Cow::Borrowed("texture-sampler"))
+            label: None
         });
 
         let texture_bind_group_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
@@ -324,7 +454,7 @@ impl Renderer {
                     count: None
                 }, 
             ]),
-            label: Some(Cow::Borrowed("texture-bind-group-layout")),
+            label: None
         });
 
         (
@@ -340,56 +470,169 @@ impl Renderer {
                         resource: BindingResource::Sampler(&texture_sampler),
                     }
                 ]),
-                label: Some(Cow::Borrowed("texture-bind-group")),
+                label: None
             }),
             texture_bind_group_layout,
         )
     }
 
+    fn create_light_and_depth_texture(device: &Device, layout: &BindGroupLayout, width: u32, height: u32) -> (BindGroup, TextureView, TextureView) {
+        let light_texture= device.create_texture(&TextureDescriptor {
+            size: Extent3d {
+                width,
+                height,
+                depth: 1
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: TextureDimension::D2,
+            format: TextureFormat::Bgra8UnormSrgb,
+            usage: TextureUsage::SAMPLED | TextureUsage::OUTPUT_ATTACHMENT,
+            label: None
+        });
 
+        let light_texture_view = light_texture.create_default_view();
+
+        let depth_texture= device.create_texture(&TextureDescriptor {
+            size: Extent3d {
+                width,
+                height,
+                depth: 1
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: TextureDimension::D2,
+            format: TextureFormat::Depth32Float,
+            usage: TextureUsage::SAMPLED | TextureUsage::OUTPUT_ATTACHMENT,
+            label: None
+        });
+
+        let depth_texture_view = depth_texture.create_default_view();
+
+        let light_texture_sampler = device.create_sampler(&SamplerDescriptor {
+            address_mode_u: AddressMode::ClampToEdge,
+            address_mode_v: AddressMode::ClampToEdge,
+            address_mode_w: AddressMode::ClampToEdge,
+            mag_filter: FilterMode::Nearest,
+            min_filter: FilterMode::Nearest,
+            mipmap_filter: FilterMode::Nearest,
+            lod_min_clamp: -100.0,
+            lod_max_clamp: 100.0,
+            compare: None,
+            anisotropy_clamp: None,
+            label: None
+        });
+
+        let uniform_buffer = device.create_buffer_with_data(
+            bytemuck::cast_slice(&[width as f32, height as f32]),
+            wgpu::BufferUsage::UNIFORM | wgpu::BufferUsage::COPY_DST,
+        );
+
+        (
+            device.create_bind_group(&BindGroupDescriptor {
+                layout: &layout,
+                entries: Cow::Owned(vec![
+                    BindGroupEntry {
+                        binding: 0,
+                        resource: BindingResource::TextureView(&light_texture_view),
+                    },
+                    BindGroupEntry {
+                        binding: 1,
+                        resource: BindingResource::Sampler(&light_texture_sampler),
+                    },
+                    BindGroupEntry {
+                        binding: 2,
+                        resource: BindingResource::Buffer(uniform_buffer.slice(..))
+                    }
+                ]),
+                label: None
+            }),
+            light_texture_view,
+            depth_texture_view
+        )
+    }
 
     pub fn resize(&mut self, width: u32, height: u32) {
         self.swap_chain_desc.width = width;
         self.swap_chain_desc.height = height;
         self.swap_chain = self.device.create_swap_chain(&self.surface, &self.swap_chain_desc);
+        let tex_resize = Self::create_light_and_depth_texture(
+            &self.device, &self.tex_light_bind_group_layout, width, height);
+        self.tex_light_bind_group = tex_resize.0;
+        self.light_tex_view = tex_resize.1;
+        self.depth_tex_view = tex_resize.2;
     }
 
     pub fn render(&mut self) {
         // TEST
-        self.draw(Vec2(0.3,0.3), true, textures::PLAYER_WALK[0], 0.5);
+        self.draw(Vec2(0.5, 0.0), true, textures::PLAYER_WALK[0], 0.5);
+        for x in -10..11 {
+            for y in -10..11 {
+                self.draw(Vec2(x as f32, y as f32), false, textures::TILE_DUNGEON_BRICK_BG, 0.7);
+            }
+        }
+        self.draw_light_default(Vec2(0.0, 0.0), 8.0, Rgb(1.0, 0.8, 0.3));
+        self.draw_light_default(Vec2(3.5, 1.0), 8.0, Rgb(0.7, 0.7, 1.0));
 
-        let instance_buffer = self.device.create_buffer_with_data(
-            bytemuck::cast_slice(&self.instances), 
-            BufferUsage::VERTEX
-        );
-
+        
         let frame = self.swap_chain
             .get_current_frame()
             .expect("Timeout when acquiring next swap chain texture");
+
         let mut encoder = self.device.create_command_encoder(&CommandEncoderDescriptor {
-            label: None,
+            label: None
         });
-        {
-            let mut render_pass = encoder.begin_render_pass(&RenderPassDescriptor {
-                color_attachments: Cow::Owned(vec![RenderPassColorAttachmentDescriptor {
-                    attachment: &frame.output.view,
-                    resolve_target: None,
-                    ops: Operations {
-                        load: LoadOp::Clear(Color::BLUE),
-                        store: true
-                    }
-                }]),
-                depth_stencil_attachment: None,
-            });
-            render_pass.set_pipeline(&self.render_pipeline);
-            render_pass.set_bind_group(0, &self.texture_bind_group, &[]);
-            //render_pass.set_bind_group(1, &self.uniform_bind_group, &[]);
-            render_pass.set_vertex_buffer(0, instance_buffer.slice(..));
-            render_pass.set_vertex_buffer(1, self.vertex_buffer.slice(..));
-            render_pass.draw(0..6, 0..(self.instances.len() as u32));
-        }
+
+        // Light
+        let instance_buffer_light = self.device.create_buffer_with_data(
+            bytemuck::cast_slice(&self.light_instances), 
+            BufferUsage::VERTEX
+        );
+        let mut render_pass = encoder.begin_render_pass(&RenderPassDescriptor {
+            color_attachments: Cow::Owned(vec![RenderPassColorAttachmentDescriptor { // TODO: take vec out of loop
+                attachment: &self.light_tex_view,
+                //attachment: &frame.output.view,
+                resolve_target: None,
+                ops: Operations { load: LoadOp::Clear(Color::BLACK), store: true }
+            }]),
+            depth_stencil_attachment: None,
+        });
+        render_pass.set_pipeline(&self.render_pipeline_lights);
+        render_pass.set_bind_group(0, &self.tex_bind_group, &[]);
+        render_pass.set_vertex_buffer(0, instance_buffer_light.slice(..));
+        render_pass.set_vertex_buffer(1, self.vertex_buffer.slice(..));
+        render_pass.draw(0..6, 0..(self.light_instances.len() as u32));
+        drop(render_pass);
+        self.light_instances.clear();
+
+        // World
+        let instance_buffer_world = self.device.create_buffer_with_data(
+            bytemuck::cast_slice(&self.sprite_instances), 
+            BufferUsage::VERTEX
+        );
+        let mut render_pass = encoder.begin_render_pass(&RenderPassDescriptor {
+            color_attachments: Cow::Owned(vec![RenderPassColorAttachmentDescriptor {
+                attachment: &frame.output.view,
+                resolve_target: None,
+                ops: Operations {load: LoadOp::Clear(Color::BLACK), store: true }
+            }]),
+            depth_stencil_attachment: Some(RenderPassDepthStencilAttachmentDescriptor {
+                attachment: &self.depth_tex_view,
+                depth_ops: Some(Operations {load: LoadOp::Clear(1.0), store: true} ),
+                stencil_ops: None
+            })
+        });
+        render_pass.set_pipeline(&self.render_pipeline_world);
+        render_pass.set_bind_group(0, &self.tex_bind_group, &[]);
+        render_pass.set_bind_group(1, &self.tex_light_bind_group, &[]);
+        render_pass.set_vertex_buffer(0, instance_buffer_world.slice(..));
+        render_pass.set_vertex_buffer(1, self.vertex_buffer.slice(..));
+        render_pass.draw(0..6, 0..(self.sprite_instances.len() as u32));
+        drop(render_pass);
+        self.sprite_instances.clear();
+
+
         self.queue.submit(Some(encoder.finish()));
-        
     }
 
     pub fn draw(&mut self, pos: Vec2, bottom: bool, sprite: Sprite, layer: f32) {
@@ -398,12 +641,25 @@ impl Renderer {
         // Maybe do this in a shader?
         let resize = Vec2(self.swap_chain_desc.height as f32 / self.swap_chain_desc.width as f32, 1.0) / self.camera_size;
         // TODO: culling
-        self.instances.push(SpriteInstance {
+        self.sprite_instances.push(SpriteInstance {
             pos: (pos-self.camera_pos) * resize,
             size: size_real * resize,
             uv_center: sprite.center * textures::UV_COORDS_FACTOR,
             uv_size: sprite.size * textures::UV_COORDS_FACTOR,
             layer
+        });
+    }
+
+    pub fn draw_light_default(&mut self, pos: Vec2, size: f32, color: Rgb) {
+        // Maybe do this in a shader?
+        let resize = Vec2(self.swap_chain_desc.height as f32 / self.swap_chain_desc.width as f32, 1.0) / self.camera_size;
+        // TODO: culling
+        self.light_instances.push(LightInstance {
+            pos: (pos-self.camera_pos) * resize,
+            size: Vec2(size, size) * resize,
+            uv_center: textures::DEFAULT_LIGHT.center * textures::UV_COORDS_FACTOR,
+            uv_size: textures::DEFAULT_LIGHT.size * textures::UV_COORDS_FACTOR,
+            color: (color.0, color.1, color.2)
         });
     }
 }

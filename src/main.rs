@@ -55,7 +55,7 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
     event_loop.run(move |event, _, control_flow| {
         *control_flow = ControlFlow::Poll;
         match event {
-            Event::MainEventsCleared => window.request_redraw(),
+            Event::MainEventsCleared => {}, //window.request_redraw(),
             Event::RedrawRequested(_) => renderer.render(),
             Event::WindowEvent { event: WindowEvent::Resized(size), .. } 
                 => renderer.resize(size.width, size.height),
