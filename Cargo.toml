@@ -11,6 +11,10 @@ winit = { version = "0.22", features = ["web-sys"]}
 futures = "0.3"
 bytemuck = "1.2"
 image = "0.23"
+strum = "0.18.0"
+strum_macros = "0.18.0"
+hecs = "0.2" # maybe bevy_hecs would be useful for Added, Mutated
+
 
 [build-dependencies]
 shaderc = "0.6"

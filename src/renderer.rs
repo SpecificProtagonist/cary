@@ -5,12 +5,27 @@ use std::{
 use image::GenericImageView;
 use winit::window::Window;
 use wgpu::*;
-use super::textures::{self, Sprite};
+use super::textures::{self, TexCoords, TexAnchor};
 use super::Vec2;
 
 
 // TODO: HSV
-pub struct Rgb(f32, f32, f32);
+#[derive(Copy, Clone, Debug)]
+pub struct Rgb(pub f32, pub f32, pub f32);
+
+#[derive(Copy, Clone, Debug)]
+pub enum Layer {
+    ForegroundPlayer = 6,
+    Foreground = 7,
+    Background = 8,
+    BackgroundTile = 9,
+}
+
+impl From<Layer> for f32 {
+    fn from(layer: Layer) -> Self {
+        layer as i32 as f32 / 10.0
+    }
+}
 
 
 #[repr(C)]
@@ -63,8 +78,13 @@ pub struct Renderer {
     camera_size: f32
 }
 
+
 impl Renderer {
-    pub async fn create(window: &Window) -> Self {
+    pub fn create(window: &Window) -> Self {
+        futures::executor::block_on(Self::create_async(window))
+    }
+
+    async fn create_async(window: &Window) -> Self {
         /* Set up device */
 
         let size = window.inner_size();
@@ -74,7 +94,7 @@ impl Renderer {
         let adapter = instance.request_adapter(
             &RequestAdapterOptions {
                 power_preference: PowerPreference::Default,
-                compatible_surface: Some(&surface),
+                compatible_surface: Some(&surface)
             }
         )
         .await
@@ -564,17 +584,6 @@ impl Renderer {
     }
 
     pub fn render(&mut self) {
-        // TEST
-        self.draw(Vec2(0.5, 0.0), true, textures::PLAYER_WALK[0], 0.5);
-        for x in -10..11 {
-            for y in -10..11 {
-                self.draw(Vec2(x as f32, y as f32), false, textures::TILE_DUNGEON_BRICK_BG, 0.7);
-            }
-        }
-        self.draw_light_default(Vec2(0.0, 0.0), 8.0, Rgb(1.0, 0.8, 0.3));
-        self.draw_light_default(Vec2(3.5, 1.0), 8.0, Rgb(0.7, 0.7, 1.0));
-
-        
         let frame = self.swap_chain
             .get_current_frame()
             .expect("Timeout when acquiring next swap chain texture");
@@ -635,30 +644,35 @@ impl Renderer {
         self.queue.submit(Some(encoder.finish()));
     }
 
-    pub fn draw(&mut self, pos: Vec2, bottom: bool, sprite: Sprite, layer: f32) {
-        let size_real = sprite.size / textures::PIXELS_PER_TILE;
-        let pos = Vec2(pos.0, pos.1 + if bottom {size_real.1/2.0} else {0.0});
+    pub fn draw(&mut self, pos: Vec2, anchor: TexAnchor, tex: &TexCoords, layer: Layer) {
+        let size_real = tex.size / textures::PIXELS_PER_TILE;
+        let pos = Vec2(pos.0, pos.1 + match anchor {
+            TexAnchor::Top    => -size_real.1/2.0,
+            TexAnchor::Center => 0.0,
+            TexAnchor::Bottom => size_real.1/2.0
+        });
         // Maybe do this in a shader?
         let resize = Vec2(self.swap_chain_desc.height as f32 / self.swap_chain_desc.width as f32, 1.0) / self.camera_size;
         // TODO: culling
+        // TODO: parallax layers?
         self.sprite_instances.push(SpriteInstance {
             pos: (pos-self.camera_pos) * resize,
             size: size_real * resize,
-            uv_center: sprite.center * textures::UV_COORDS_FACTOR,
-            uv_size: sprite.size * textures::UV_COORDS_FACTOR,
-            layer
+            uv_center: tex.center * textures::UV_COORDS_FACTOR,
+            uv_size: tex.size * textures::UV_COORDS_FACTOR,
+            layer: layer.into()
         });
     }
 
-    pub fn draw_light_default(&mut self, pos: Vec2, size: f32, color: Rgb) {
+    pub fn draw_light(&mut self, pos: Vec2, tex: &TexCoords, size: Vec2, color: Rgb) {
         // Maybe do this in a shader?
         let resize = Vec2(self.swap_chain_desc.height as f32 / self.swap_chain_desc.width as f32, 1.0) / self.camera_size;
         // TODO: culling
         self.light_instances.push(LightInstance {
             pos: (pos-self.camera_pos) * resize,
-            size: Vec2(size, size) * resize,
-            uv_center: textures::DEFAULT_LIGHT.center * textures::UV_COORDS_FACTOR,
-            uv_size: textures::DEFAULT_LIGHT.size * textures::UV_COORDS_FACTOR,
+            size: size * resize,
+            uv_center: tex.center * textures::UV_COORDS_FACTOR,
+            uv_size: tex.size * textures::UV_COORDS_FACTOR,
             color: (color.0, color.1, color.2)
         });
     }

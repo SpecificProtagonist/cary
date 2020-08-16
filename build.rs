@@ -69,8 +69,12 @@ fn texture_atlas() {
             } else { 0 };
 
             let image = image::open(&entry.path()).unwrap();
-            // Why does it use signed integers?
-            let image_size = Size::new(image.width() as i32, image.height() as i32);
+            // Why does guillotiere use signed integers?
+            let image_size = Size::new(
+                // Manually add a border. Because of course guillotiere doesn't have an option for this.
+                image.width() as i32 + 1, 
+                image.height() as i32 + 1
+            );
 
             let insert = |map: &mut HashMap<String, Vec<_>>, alloc| {
                 if let Some(vec) = map.get_mut(&id) {
@@ -140,22 +144,19 @@ fn texture_atlas() {
     writeln!(out_file, "pub const UV_COORDS_FACTOR: Vec2 = Vec2({}f32, {}f32);",
         1.0/(size.width as f32), 1.0/(size.height as f32)).unwrap();
     for (id, vec) in &map {
-        if vec.len() == 1 {
-            let rectangle = vec[0].as_ref().unwrap().0.rectangle;
-            writeln!(out_file, "pub const {}: Sprite = Sprite {{center: Vec2({}f32, {}f32), size: Vec2({}f32, {}f32)}};", 
-                id, rectangle.center().x, rectangle.center().y, rectangle.width(), rectangle.height()).unwrap()
-        } else {
-            writeln!(out_file, "pub const {}: &[Sprite] = &[", id).unwrap();
-            for sprite in vec {
-                if let Some(sprite) = sprite {
-                    let rectangle = sprite.0.rectangle;
-                    writeln!(out_file, "    Sprite {{center: Vec2({}f32, {}f32), size: Vec2({}f32, {}f32)}},",
-                        rectangle.center().x, rectangle.center().y, rectangle.width(), rectangle.height()).unwrap()
-                } else {
-                    panic!("Missing animation frame for {}", id);
-                }
+        writeln!(out_file, "pub const {}: &[TexCoords] = &[", id).unwrap();
+        for sprite in vec {
+            if let Some(sprite) = sprite {
+                let mut rectangle = sprite.0.rectangle;
+                // Remove the border we manually added
+                rectangle.max.x -= 1;
+                rectangle.max.y -= 1;
+                writeln!(out_file, "    TexCoords {{center: Vec2({}f32, {}f32), size: Vec2({}f32, {}f32)}},",
+                    rectangle.center().x, rectangle.center().y, rectangle.width(), rectangle.height()).unwrap()
+            } else {
+                panic!("Missing animation frame for {}", id);
             }
-            writeln!(out_file, "];").unwrap();
         }
+        writeln!(out_file, "];").unwrap();
     }
 }
