@@ -5,27 +5,10 @@ use std::{
 use image::GenericImageView;
 use winit::window::Window;
 use wgpu::*;
-use super::textures::{self, TexCoords, TexAnchor};
-use super::Vec2;
+use crate::textures::{self, TexCoords, TexAnchor};
+use crate::Vec2;
+use super::{Rgb, Layer};
 
-
-// TODO: HSV
-#[derive(Copy, Clone, Debug)]
-pub struct Rgb(pub f32, pub f32, pub f32);
-
-#[derive(Copy, Clone, Debug)]
-pub enum Layer {
-    ForegroundPlayer = 6,
-    Foreground = 7,
-    Background = 8,
-    BackgroundTile = 9,
-}
-
-impl From<Layer> for f32 {
-    fn from(layer: Layer) -> Self {
-        layer as i32 as f32 / 10.0
-    }
-}
 
 
 #[repr(C)]
@@ -51,7 +34,6 @@ struct LightInstance {
 } 
 unsafe impl bytemuck::Pod for LightInstance {}
 unsafe impl bytemuck::Zeroable for LightInstance {}
-
 
 
 pub struct Renderer {
@@ -651,29 +633,41 @@ impl Renderer {
             TexAnchor::Center => 0.0,
             TexAnchor::Bottom => size_real.1/2.0
         });
-        // Maybe do this in a shader?
         let resize = Vec2(self.swap_chain_desc.height as f32 / self.swap_chain_desc.width as f32, 1.0) / self.camera_size;
-        // TODO: culling
         // TODO: parallax layers?
-        self.sprite_instances.push(SpriteInstance {
-            pos: (pos-self.camera_pos) * resize,
-            size: size_real * resize,
-            uv_center: tex.center * textures::UV_COORDS_FACTOR,
-            uv_size: tex.size * textures::UV_COORDS_FACTOR,
-            layer: layer.into()
-        });
+        let screen_pos = (pos-self.camera_pos) * resize;
+        let screen_size = size_real * resize;
+        if (screen_pos.0 + screen_size.0/2.0 > -1.0) &
+           (screen_pos.1 + screen_size.1/2.0 > -1.0) &
+           (screen_pos.0 - screen_size.0/2.0 <  1.0) &
+           (screen_pos.1 - screen_size.1/2.0 <  1.0) 
+        {
+            self.sprite_instances.push(SpriteInstance {
+                pos: screen_pos,
+                size: screen_size,
+                uv_center: tex.center * textures::UV_COORDS_FACTOR,
+                uv_size: tex.size * textures::UV_COORDS_FACTOR,
+                layer: layer.into()
+            })
+        }
     }
 
     pub fn draw_light(&mut self, pos: Vec2, tex: &TexCoords, size: Vec2, color: Rgb) {
-        // Maybe do this in a shader?
         let resize = Vec2(self.swap_chain_desc.height as f32 / self.swap_chain_desc.width as f32, 1.0) / self.camera_size;
-        // TODO: culling
-        self.light_instances.push(LightInstance {
-            pos: (pos-self.camera_pos) * resize,
-            size: size * resize,
-            uv_center: tex.center * textures::UV_COORDS_FACTOR,
-            uv_size: tex.size * textures::UV_COORDS_FACTOR,
-            color: (color.0, color.1, color.2)
-        });
+        let screen_pos = (pos-self.camera_pos) * resize;
+        let screen_size = size * resize;
+        if (screen_pos.0 + screen_size.0/2.0 > -1.0) &
+           (screen_pos.1 + screen_size.1/2.0 > -1.0) &
+           (screen_pos.0 - screen_size.0/2.0 <  1.0) &
+           (screen_pos.1 - screen_size.1/2.0 <  1.0) 
+        {
+            self.light_instances.push(LightInstance {
+                pos: screen_pos,
+                size: screen_size,
+                uv_center: tex.center * textures::UV_COORDS_FACTOR,
+                uv_size: tex.size * textures::UV_COORDS_FACTOR,
+                color: (color.0, color.1, color.2)
+            })
+        }
     }
 }

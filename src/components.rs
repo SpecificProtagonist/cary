@@ -24,6 +24,7 @@ impl From<Vec2> for Pos {
 }
 
 pub struct Physics {
+    // TODO: maybe smallvec?
     /// Bounds relative to position
     pub bounds: Bounds,
     pub vel: Vec2,
@@ -32,7 +33,7 @@ pub struct Physics {
     pub flying: bool
 }
 
-pub struct Child {
+pub struct ChildOf {
     pub parent: hecs::Entity,
     pub offset: Vec2
 }
@@ -85,6 +86,7 @@ pub enum HControl { None, Left, Right }
 pub enum VControl { None, Up, Down }
 
 
+// TODO: maybe smallvec?
 pub struct Sprite {
     pub offset: Vec2,
     pub tex_anchor: TexAnchor,
@@ -122,10 +124,11 @@ impl Sprite {
 }
 
 
+// TODO: maybe smallvec?
 pub struct Light {
     pub offset: Vec2,
     pub tex: &'static TexCoords,
-    pub size: Vec2,
+    pub size: Option<f32>, // If size is none, it's calculated from texture size
     pub color: Rgb
 }
 
@@ -134,7 +137,7 @@ impl Light {
         Light {
             offset: Vec2::zero(),
             tex: &DEFAULT_LIGHT[0],
-            size: Vec2(size, size),
+            size: Some(size),
             color
         }
     }
@@ -146,7 +149,7 @@ pub struct BatComponent {
     pub rush_cooldown: f32
 }
 
-pub type Bat = (Pos, Physics, Health, Controllable, BatComponent, Sprite);
+pub type Bat = (Pos, Physics, Health, Controllable, BatComponent, Sprite, Light);
 
 pub fn make_bat(pos: Vec2) -> Bat {
     const SIZE: f32 = 0.65;
@@ -166,7 +169,13 @@ pub fn make_bat(pos: Vec2) -> Bat {
             rush_time: 0.0,
             rush_cooldown: 0.0
         },
-        Sprite::ani(crate::textures::BAT_FLY, TexAnchor::Center, Layer::Foreground, 0.08, true)
+        Sprite::ani(crate::textures::BAT_FLY, TexAnchor::Center, Layer::Foreground, 0.08, true),
+        Light {
+            offset: Vec2::zero(),
+            tex: &BAT_LIGHT_EYES[0],
+            size: None,
+            color: Rgb(0.0, 0.0, 0.0)
+        }
     )
 }
 

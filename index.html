@@ -1,0 +1,31 @@
+<html>
+  <head>
+    <meta content="text/html;charset=utf-8" http-equiv="Content-Type"/>
+  </head>
+  <style>
+    * { 
+      margin:0; 
+      padding:0; 
+    }
+    body {
+      background-color: rgb(07, 11, 21)
+    }
+    p {
+      text-align: center;
+      padding-top: 30vh;
+      font-size: xx-large;
+    }
+    canvas { 
+      height: 100vh !important;
+      width: 100vw !important;
+      display: block;
+    }
+  </style>
+  <body>
+    <p id="loading">Loading...</p>
+    <script type="module">
+      import init from './pyrobat.js';
+      init();
+    </script>
+  </body>
+</html>

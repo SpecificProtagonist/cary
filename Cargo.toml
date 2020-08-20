@@ -1,19 +1,54 @@
 [package]
-name = "wgpu-test"
-authors = ["Vincent Junge <kvark@mozilla.com>"]
+name = "pyrobat"
+authors = ["Vincent Junge <vincentjunge@posteo.net>"]
 edition = "2018"
 version = "0.0.1"
 
+[lib]
+crate-type = ["cdylib","rlib"]
+
+[profile.release]
+lto = true
+opt-level = 's'
 
 [dependencies]
-wgpu = { git = "https://github.com/gfx-rs/wgpu-rs" }
-winit = { version = "0.22", features = ["web-sys"]}
+wgpu = { git = "https://github.com/gfx-rs/wgpu-rs", rev = "2f961270062525ddbc8fdebdc02c06794c698cda" }
 futures = "0.3"
 bytemuck = "1.2"
 image = "0.23"
 strum = "0.18.0"
 strum_macros = "0.18.0"
 hecs = "0.2" # maybe bevy_hecs would be useful for Added, Mutated
+
+#[target.wasm32-unknown-unknown.dependencies]
+wasm-bindgen = "0.2"
+winit = { version = "0.22", features = ["web-sys"]}
+console_error_panic_hook = "0.1.6"
+js-sys = "0.3.44"
+
+#[target.wasm32-unknown-unknown.dependencies.web-sys]
+[dependencies.web-sys]
+version = "0.3.4"
+features = [
+  'console',
+  'Document',
+  'Element',
+  'HtmlElement',
+  'Node',
+  'Window',
+  'HtmlCanvasElement',
+  'WebGl2RenderingContext',
+  'WebGlVertexArrayObject',
+  'WebGlFramebuffer',
+  'WebGlBuffer',
+  'WebGlTexture',
+  'WebGlProgram',
+  'WebGlShader',
+  'WebGlUniformLocation'
+]
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+winit = "0.22"
 
 
 [build-dependencies]

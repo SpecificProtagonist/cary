@@ -23,7 +23,7 @@ fn compile_shaders() {
     let mut compiler = Compiler::new().unwrap();
 
     let mut compile_shader = |name, shader_kind| {
-        let src_file = format!("src/shaders/{}.glsl", name);
+        let src_file = format!("src/renderer/shaders/{}.glsl", name);
         println!("cargo:rerun-if-changed={}", src_file);
         let vertex_spirv = compiler.compile_into_spirv(
             &std::fs::read_to_string(src_file).unwrap(), 

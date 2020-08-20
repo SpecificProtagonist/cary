@@ -12,8 +12,6 @@ layout(set = 1, binding = 2) uniform Uniforms {
     vec2 window_size;
 };
 
-// Tmp
-//const vec2 window_size = vec2(1024, 768);
 
 vec4 light_color() {
     vec4 light = texture(sampler2D(lightmap, lightmap_sampler), gl_FragCoord.xy/window_size);
