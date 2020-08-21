@@ -132,4 +132,33 @@ impl Bounds {
         &
         (self.min.1 < other.max.1) & (self.max.1 > other.min.1)
     }
+
+    pub fn check_move_against(self, movement: Vec2, obstacle: Bounds) -> Vec2 {
+        let eps = 0.001;
+        let move_x = if movement.0 > eps {
+            let distance = (obstacle.min.0 - self.max.0 - eps).max(movement.0).max(0.0);
+            Vec2(distance, movement.1 * distance/movement.0)
+        } else if movement.0 < -eps {
+            let distance = (self.min.0 - obstacle.max.0 - eps).max(-movement.1).max(0.0);
+            Vec2(-distance, movement.1 * distance/movement.0)
+        } else {
+            movement
+        };
+        let move_y = if movement.1 > eps {
+            let distance = (obstacle.min.1 - self.max.1 - eps).min(movement.1).max(0.0);
+            Vec2(distance, movement.0 * distance/movement.1)
+        } else if movement.1 < -eps {
+            let distance = (self.min.1 - obstacle.max.1 - eps).min(-movement.0).max(0.0);
+            Vec2(-distance, movement.0 * distance/movement.1)
+        } else {
+            movement
+        };
+        println!("Bounds: {:?}, attempt: {:?}, obstacle: {:?}  --> move_x: {:?}, move_y: {:?}",
+            self, movement, obstacle, move_x, move_y);
+        if move_x.len() < move_y.len() {
+            move_x
+        } else {
+            move_y
+        }
+    }
 }

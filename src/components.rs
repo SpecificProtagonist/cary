@@ -23,6 +23,10 @@ impl From<Vec2> for Pos {
     }
 }
 
+pub struct Collider {
+    pub bounds: Bounds
+}
+
 pub struct Physics {
     // TODO: maybe smallvec?
     /// Bounds relative to position
@@ -30,7 +34,7 @@ pub struct Physics {
     pub vel: Vec2,
     pub acc: Vec2,
     pub mass: f32,
-    pub flying: bool
+    pub gravity: bool
 }
 
 pub struct ChildOf {
@@ -38,23 +42,7 @@ pub struct ChildOf {
     pub offset: Vec2
 }
 
-pub struct Health {
-    pub current: u16,
-    pub max: u16
-}
-
-impl From<u16> for Health {
-    fn from(max: u16) -> Self {
-        Health {
-            current: max,
-            max
-        }
-    }
-}
-
-pub struct Burning {
-    pub duration: f32
-}
+pub struct Killable {}
 
 pub struct Walking {
     pub max_speed: f32,
@@ -63,6 +51,10 @@ pub struct Walking {
     pub jump_time: f32,
 }
 
+pub struct Flying {
+    pub max_speed: f32,
+    pub acc: f32,
+}
 
 pub struct Controllable {
     pub horizontal: HControl,
@@ -82,7 +74,9 @@ impl Default for Controllable {
     }
 }
 
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum HControl { None, Left, Right }
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum VControl { None, Up, Down }
 
 
@@ -121,65 +115,34 @@ impl Sprite {
             layer
         }
     }
-}
 
-
-// TODO: maybe smallvec?
-pub struct Light {
-    pub offset: Vec2,
-    pub tex: &'static TexCoords,
-    pub size: Option<f32>, // If size is none, it's calculated from texture size
-    pub color: Rgb
-}
-
-impl Light {
-    pub fn simple(size: f32, color: Rgb) -> Self {
-        Light {
-            offset: Vec2::zero(),
-            tex: &DEFAULT_LIGHT[0],
-            size: Some(size),
-            color
+    pub fn timer(&self) -> f32 {
+        if self.repeat {
+            self.timer % (self.frame_duration * self.tex.len() as f32)
+        } else {
+            self.timer
         }
     }
 }
 
-
-pub struct BatComponent { 
-    pub rush_time: f32,
-    pub rush_cooldown: f32
+pub struct Player {
+    
 }
 
-pub type Bat = (Pos, Physics, Health, Controllable, BatComponent, Sprite, Light);
-
-pub fn make_bat(pos: Vec2) -> Bat {
+pub fn make_player(pos: Vec2) -> (Player, Pos, Physics, Controllable, Killable, Sprite){
     const SIZE: f32 = 0.65;
-    const HEALTH: u16 = 2;
     (
+        Player {},
         pos.into(),
         Physics {
             bounds: Bounds::around(Vec2::zero(), Vec2(SIZE, SIZE)),
             vel: Vec2::zero(),
             acc: Vec2::zero(),
             mass: 0.25,
-            flying: true
+            gravity: true
         },
-        HEALTH.into(),
         Controllable::default(),
-        BatComponent {
-            rush_time: 0.0,
-            rush_cooldown: 0.0
-        },
-        Sprite::ani(crate::textures::BAT_FLY, TexAnchor::Center, Layer::Foreground, 0.08, true),
-        Light {
-            offset: Vec2::zero(),
-            tex: &BAT_LIGHT_EYES[0],
-            size: None,
-            color: Rgb(0.0, 0.0, 0.0)
-        }
+        Killable {},
+        Sprite::ani(crate::textures::PLAYER_FLY, TexAnchor::Center, Layer::Foreground, 0.08, true),
     )
 }
-
-
-pub struct HumanComponent {}
-
-pub struct PlayerComponent {}

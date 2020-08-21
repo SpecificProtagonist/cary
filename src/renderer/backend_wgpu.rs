@@ -365,7 +365,7 @@ impl Renderer {
             sprite_instances: Vec::new(),
 
             camera_pos: Vec2(0.0, 0.0),
-            camera_size: 5.0
+            camera_size: 7.0
         }
     }
 

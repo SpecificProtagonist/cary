@@ -26,7 +26,7 @@ vec4 light_color() {
 }
 
 void main() {
-    vec4 color = texture(sampler2D(tex, tex_sampler), tex_coords) * light_color();
+    vec4 color = texture(sampler2D(tex, tex_sampler), tex_coords);
     if(color.a < 0.5) {
         discard;
     } else {
