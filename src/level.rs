@@ -11,8 +11,10 @@ pub fn load() -> World {
     let mut y = 0;
     // TODO: spawn_batched() would be faster
     for c in level_string.chars() {
+        let mut background = false;
         match c {
             'P' => {
+                background = true;
                 let mut player_pos = world.entities.get_mut::<Pos>(world.player).unwrap();
                 player_pos.curr = Vec2(x as f32, y as f32);
             },
@@ -20,7 +22,11 @@ pub fn load() -> World {
                 world.entities.spawn(make_tile_solid(x, y));
             },
             ' ' => {
-                world.entities.spawn(make_tile_background(x, y));
+                background = true;
+            },
+            '^' => {
+                background = true;
+                world.entities.spawn(make_spikes(x, y));
             },
             '.' => (),
             '\n' => {
@@ -29,6 +35,9 @@ pub fn load() -> World {
             },
             '\r' => (),
             _ => panic!()
+        }
+        if background {
+            world.entities.spawn(make_tile_background(x, y));
         }
         x += 1;
     }

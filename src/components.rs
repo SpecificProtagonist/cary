@@ -1,11 +1,11 @@
 use crate::{Vec2, Bounds};
 use crate::textures::*;
-use crate::renderer::{Rgb, Layer};
+use crate::renderer::Layer;
 
 // This file will be split later
 
 
-
+// TODO: merge bounds into pos
 pub struct Pos {
     pub curr: Vec2,
     /// Position during the previous update,
@@ -41,7 +41,14 @@ pub struct ChildOf {
     pub offset: Vec2
 }
 
-pub struct Killable {}
+pub struct Killable {
+    pub bounds: Bounds,
+    pub loss_on_death: bool
+}
+
+pub struct Hazzard {
+    pub bounds: Bounds
+}
 
 pub struct Walking {
     pub max_speed: f32,
@@ -157,23 +164,37 @@ pub fn make_tile_solid(x: i32, y: i32) -> (Pos, Sprite, Collider) {
     )
 }
 
+pub fn make_spikes(x: i32, y: i32) -> (Pos, Hazzard, Sprite) {
+    (
+        Vec2(x as f32, y as f32).into(),
+        Hazzard {
+            bounds: Bounds::around(Vec2(0.0, 0.5), Vec2(1.0, 1.0))
+        },
+        Sprite::single(crate::textures::SPIKES, TexAnchor::Bottom, Layer::Foreground),
+    )
+}
+
 pub struct Player {
     pub flap_cooldown: f32
 }
 
 pub fn make_player(pos: Vec2) -> (Player, Pos, Physics, Controllable, Killable, Sprite){
     const SIZE: f32 = 0.65;
+    let bounds = Bounds::around(Vec2::zero(), Vec2(SIZE, SIZE));
     (
         Player { flap_cooldown: 0.0 },
         pos.into(),
         Physics {
-            bounds: Bounds::around(Vec2::zero(), Vec2(SIZE, SIZE)),
+            bounds,
             vel: Vec2::zero(),
             mass: 0.25,
             gravity: true
         },
         Controllable::default(),
-        Killable {},
+        Killable {
+            bounds,
+            loss_on_death: true
+        },
         Sprite::ani(crate::textures::PLAYER_FLY, TexAnchor::Center, Layer::Foreground, 0.08, false),
     )
 }

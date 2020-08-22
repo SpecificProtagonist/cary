@@ -166,6 +166,7 @@ impl World {
         self.update_player_input();
         self.update_player();
         self.update_physics();
+        self.update_hazzards();
         self.update_animations();
         self.update_camera();
     }
@@ -266,6 +267,20 @@ impl World {
                 }
             }
             pos.curr += movement;
+        }
+    }
+
+    fn update_hazzards(&mut self) {
+        for (_, (pos, killable)) in self.query::<(&Pos, &Killable)>().iter() {
+            for (_, (hazzard_pos, hazzard)) in self.query::<(&Pos, &Hazzard)>().iter() {
+                if killable.bounds.moved(pos.curr).overlapps(hazzard.bounds.moved(hazzard_pos.curr)) {
+                    if killable.loss_on_death {
+                        todo!();
+                    } else {
+                        todo!();
+                    }
+                }
+            }
         }
     }
 
