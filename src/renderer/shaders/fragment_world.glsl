@@ -2,7 +2,7 @@
 
 layout(location = 0) in vec2 tex_coords;
 
-layout(location = 0) out vec4 outColor;
+layout(location = 0) out vec4 out_color;
 
 layout(set = 0, binding = 0) uniform texture2D tex;
 layout(set = 0, binding = 1) uniform sampler tex_sampler;
@@ -10,6 +10,9 @@ layout(set = 1, binding = 0) uniform texture2D lightmap;
 layout(set = 1, binding = 1) uniform sampler lightmap_sampler;
 layout(set = 1, binding = 2) uniform Uniforms {
     vec2 window_size;
+    vec2 transition_center;
+    float transition_distance;
+    float transition_victory; // should be a bool in
 };
 
 
@@ -27,9 +30,12 @@ vec4 light_color() {
 
 void main() {
     vec4 color = texture(sampler2D(tex, tex_sampler), tex_coords);
+    vec4 transition_color = transition_victory == 1 ? vec4(0, 1, 1, 1) : vec4(1, 0.5, 0.5, 1);
     if(color.a < 0.5) {
         discard;
+    } else if(transition_distance > distance(gl_FragCoord.xy/window_size, transition_center)) {
+        out_color = transition_color;
     } else {
-        outColor = color;
+        out_color = color;
     }
 }

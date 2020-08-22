@@ -620,7 +620,7 @@ impl Renderer {
         self.queue.submit(Some(encoder.finish()));
     }
 
-    pub fn draw(&mut self, camera: &crate::Camera, pos: Vec2, anchor: TexAnchor, tex: &TexCoords, layer: Layer) {
+    pub fn draw(&mut self, camera: &crate::Camera, pos: Vec2, anchor: TexAnchor, tex: &TexCoords, layer: Layer, mirror: bool) {
         let size_real = tex.size / textures::PIXELS_PER_TILE;
         let pos = Vec2(pos.0, pos.1 + match anchor {
             TexAnchor::Top    => -size_real.1/2.0,
@@ -640,7 +640,7 @@ impl Renderer {
                 pos: screen_pos,
                 size: screen_size,
                 uv_center: tex.center * textures::UV_COORDS_FACTOR,
-                uv_size: tex.size * textures::UV_COORDS_FACTOR,
+                uv_size: tex.size * if mirror {Vec2(-1.0, 1.0)} else {Vec2(1.0, 1.0)} * textures::UV_COORDS_FACTOR,
                 layer: layer.into()
             })
         }

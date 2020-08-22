@@ -36,19 +36,6 @@ struct SpriteInstance {
 unsafe impl bytemuck::Pod for SpriteInstance {}
 unsafe impl bytemuck::Zeroable for SpriteInstance {}
 
-#[repr(C)]
-#[derive(Copy, Clone)]
-struct LightInstance {
-    vertex: Vec2,
-    pos: Vec2,
-    size: Vec2,
-    uv_center: Vec2,
-    uv_size: Vec2,
-    color: (f32, f32, f32)
-} 
-unsafe impl bytemuck::Pod for LightInstance {}
-unsafe impl bytemuck::Zeroable for LightInstance {}
-
 const vertices: &[f32; 12] = &[
     -0.5_f32,  0.5_f32,
     -0.5_f32, -0.5_f32,
@@ -61,14 +48,9 @@ const vertices: &[f32; 12] = &[
 pub struct Renderer {
     canvas: HtmlCanvasElement,
     context: WebGl2RenderingContext,
-    program_light: WebGlProgram,
     program_world: WebGlProgram,
-    vao_light: WebGlVertexArrayObject,
     vao_world: WebGlVertexArrayObject,
-    light_framebuffer: WebGlFramebuffer, // remove?
-    lightmap: WebGlTexture,
     buffer: WebGlBuffer,
-    light_instances: Vec<LightInstance>,
     sprite_instances: Vec<SpriteInstance>,
 }
 
@@ -88,20 +70,6 @@ impl Renderer {
         context.depth_func(WebGl2RenderingContext::LEQUAL);
         context.clear_depth(1.0);
         context.clear_color(0.0, 0.0, 0.0, 1.0);
-
-        let program_light = link_program(
-            &context, 
-            &compile_shader(
-                &context,
-                WebGl2RenderingContext::VERTEX_SHADER,
-                include_str!("shaders_webgl/vertex_light.glsl")
-            ), 
-            &compile_shader(
-                &context,
-                WebGl2RenderingContext::FRAGMENT_SHADER,
-                include_str!("shaders_webgl/fragment_light.glsl")
-            )
-        );
 
         let program_world = link_program(
             &context, 
@@ -145,59 +113,12 @@ impl Renderer {
         context.tex_parameteri(WebGl2RenderingContext::TEXTURE_2D, WebGl2RenderingContext::TEXTURE_WRAP_S, WebGl2RenderingContext::CLAMP_TO_EDGE as i32);
         context.tex_parameteri(WebGl2RenderingContext::TEXTURE_2D, WebGl2RenderingContext::TEXTURE_WRAP_T, WebGl2RenderingContext::CLAMP_TO_EDGE as i32);
 
-        context.use_program(Some(&program_light));
-        let uniform_light_tex = context.get_uniform_location(&program_light, "tex").unwrap();
-        context.uniform1i(Some(&uniform_light_tex), 0);
-     
         context.use_program(Some(&program_world));
         let uniform_world_tex = context.get_uniform_location(&program_world, "tex").unwrap();
         context.uniform1i(Some(&uniform_world_tex), 0);
 
 
-        /*** LIGHT FRAMEBUFFER ***/
-        let light_framebuffer = context.create_framebuffer().unwrap();
-        context.bind_framebuffer(WebGl2RenderingContext::FRAMEBUFFER, Some(&light_framebuffer));
-
-        let lightmap = context.create_texture().unwrap();
-        context.active_texture(WebGl2RenderingContext::TEXTURE1);
-        context.bind_texture(WebGl2RenderingContext::TEXTURE_2D, Some(&lightmap));
-
-        context.tex_parameteri(WebGl2RenderingContext::TEXTURE_2D, WebGl2RenderingContext::TEXTURE_MAG_FILTER, WebGl2RenderingContext::NEAREST as i32);
-        context.tex_parameteri(WebGl2RenderingContext::TEXTURE_2D, WebGl2RenderingContext::TEXTURE_MIN_FILTER, WebGl2RenderingContext::NEAREST as i32);
-
-        context.framebuffer_texture_2d(
-            WebGl2RenderingContext::FRAMEBUFFER, 
-            WebGl2RenderingContext::COLOR_ATTACHMENT0,
-            WebGl2RenderingContext::TEXTURE_2D,
-            Some(&lightmap), 0
-        );
-
-        context.use_program(Some(&program_world));
-        let uniform_world_lightmap = context.get_uniform_location(&program_world, "lightmap").unwrap();
-        context.uniform1i(Some(&uniform_world_lightmap), 1);
-
-
         let buffer = context.create_buffer().unwrap();
-        /*** LIGHT VERTEX BUFFER ***/
-        // The efficient thing to do would be to use instancing (like in the wgpu backend)
-        // But it just. Won't. Work. The data just doesn't reach the shader when vertex_attrib_divisor is 1. Argh.
-        let vao_light = context.create_vertex_array().unwrap();
-        context.bind_vertex_array(Some(&vao_light));
-        context.bind_buffer(WebGl2RenderingContext::ARRAY_BUFFER, Some(&buffer));
-        context.bind_buffer(WebGl2RenderingContext::ARRAY_BUFFER, Some(&buffer));
-        let instance_size = std::mem::size_of::<LightInstance>() as i32;
-        context.vertex_attrib_pointer_with_i32(ATTRIB_VERTEX,    2, WebGl2RenderingContext::FLOAT, false, instance_size, 4 * 0);
-        context.vertex_attrib_pointer_with_i32(ATTRIB_POSITION,  2, WebGl2RenderingContext::FLOAT, false, instance_size, 4 * 2);
-        context.vertex_attrib_pointer_with_i32(ATTRIB_SIZE,      2, WebGl2RenderingContext::FLOAT, false, instance_size, 4 * 4);
-        context.vertex_attrib_pointer_with_i32(ATTRIB_UV_CENTER, 2, WebGl2RenderingContext::FLOAT, false, instance_size, 4 * 6);
-        context.vertex_attrib_pointer_with_i32(ATTRIB_UV_SIZE,   2, WebGl2RenderingContext::FLOAT, false, instance_size, 4 * 8);
-        context.vertex_attrib_pointer_with_i32(ATTRIB_COLOR,     3, WebGl2RenderingContext::FLOAT, false, instance_size, 4 * 10);
-        context.enable_vertex_attrib_array(ATTRIB_VERTEX);
-        context.enable_vertex_attrib_array(ATTRIB_POSITION);
-        context.enable_vertex_attrib_array(ATTRIB_SIZE);
-        context.enable_vertex_attrib_array(ATTRIB_UV_CENTER);
-        context.enable_vertex_attrib_array(ATTRIB_UV_SIZE);
-        context.enable_vertex_attrib_array(ATTRIB_COLOR);
 
         /*** WORLD VERTEX BUFFER ***/
         let vao_world = context.create_vertex_array().unwrap();
@@ -224,14 +145,9 @@ impl Renderer {
         Renderer {
             canvas,
             context,
-            program_light,
             program_world,
-            vao_light,
             vao_world,
-            light_framebuffer,
-            lightmap,
             buffer,
-            light_instances: Vec::new(),
             sprite_instances: Vec::new(),
         }
     }
@@ -242,15 +158,7 @@ impl Renderer {
         self.canvas.set_height(height);
         self.context.viewport(0, 0, width as i32, height as i32);
 
-        self.context.active_texture(WebGl2RenderingContext::TEXTURE1);
-        self.context.bind_texture(WebGl2RenderingContext::TEXTURE_2D, Some(&self.lightmap));
-        self.context.tex_image_2d_with_i32_and_i32_and_i32_and_format_and_type_and_opt_u8_array(
-            WebGl2RenderingContext::TEXTURE_2D, 0, WebGl2RenderingContext::RGB8 as i32,
-            width as i32, height as i32, 0,
-            WebGl2RenderingContext::RGB,
-            WebGl2RenderingContext::UNSIGNED_BYTE,
-            None
-        ).unwrap();
+        // resize depth?
 
         self.context.use_program(Some(&self.program_world));
         let window_size_uniform = self.context.get_uniform_location(&self.program_world, "window_size").unwrap();
@@ -264,25 +172,6 @@ impl Renderer {
         if (window_width != self.canvas.width()) | (window_height != self.canvas.height()) {
             self.resize(window_width, window_height);
         }
-
-        /*** LIGHT ***/
-        self.context.bind_framebuffer(WebGl2RenderingContext::FRAMEBUFFER, Some(&self.light_framebuffer));
-        self.context.bind_vertex_array(Some(&self.vao_light));
-        self.context.use_program(Some(&self.program_light));
-        self.context.blend_func(WebGl2RenderingContext::ONE, WebGl2RenderingContext::ONE);
-        // Upload instance data
-        self.context.bind_buffer(WebGl2RenderingContext::ARRAY_BUFFER, Some(&self.buffer));
-        unsafe {
-            self.context.buffer_data_with_array_buffer_view(
-                WebGl2RenderingContext::ARRAY_BUFFER,
-                &js_sys::Uint8Array::view(&bytemuck::cast_slice(&self.light_instances)),
-                WebGl2RenderingContext::STREAM_DRAW,
-            );
-        }
-        self.context.clear(WebGl2RenderingContext::COLOR_BUFFER_BIT);
-        self.context.draw_arrays(WebGl2RenderingContext::TRIANGLES, 0, self.light_instances.len() as i32);
-
-        self.light_instances.clear();
 
         /*** WORLD ***/
         self.context.bind_framebuffer(WebGl2RenderingContext::FRAMEBUFFER, None);
@@ -306,7 +195,7 @@ impl Renderer {
         self.context.flush();
     }
 
-    pub fn draw(&mut self, camera: &crate::Camera, pos: Vec2, anchor: TexAnchor, tex: &TexCoords, layer: Layer) {
+    pub fn draw(&mut self, camera: &crate::Camera, pos: Vec2, anchor: TexAnchor, tex: &TexCoords, layer: Layer, mirror: bool) {
         let size_real = tex.size / textures::PIXELS_PER_TILE;
         let pos = Vec2(pos.0, pos.1 + match anchor {
             TexAnchor::Top    => -size_real.1/2.0,
@@ -327,30 +216,8 @@ impl Renderer {
                     pos: screen_pos,
                     size: screen_size,
                     uv_center: tex.center * textures::UV_COORDS_FACTOR,
-                    uv_size: tex.size * textures::UV_COORDS_FACTOR,
+                    uv_size: tex.size * if mirror {Vec2(-1.0, 1.0)} else {Vec2(1.0, 1.0)} * textures::UV_COORDS_FACTOR,
                     layer: layer.into()
-                });
-            }
-        }
-    }
-
-    pub fn draw_light(&mut self, pos: Vec2, tex: &TexCoords, size: Vec2, color: Rgb) {
-        let resize = Vec2(self.canvas.height() as f32 / self.canvas.width() as f32, 1.0) / self.camera_size;
-        let screen_pos = (pos-self.camera_pos) * resize;
-        let screen_size = size * resize;
-        if (screen_pos.0 + screen_size.0/2.0 > -1.0) &
-           (screen_pos.1 + screen_size.1/2.0 > -1.0) &
-           (screen_pos.0 - screen_size.0/2.0 <  1.0) &
-           (screen_pos.1 - screen_size.1/2.0 <  1.0) 
-        {
-            for i in 0..6 {
-                self.light_instances.push(LightInstance {
-                    vertex: Vec2(vertices[(2*i) as usize], vertices[(2*i+1) as usize]),
-                    pos: (pos-self.camera_pos) * resize,
-                    size: size * resize,
-                    uv_center: tex.center * textures::UV_COORDS_FACTOR,
-                    uv_size: tex.size * textures::UV_COORDS_FACTOR,
-                    color: (color.0, color.1, color.2)
                 });
             }
         }

@@ -36,7 +36,8 @@ pub fn main() {
 
     let event_loop = EventLoop::new();
     // There will be only one window -> ignore window ids in events
-    let window = winit::window::Window::new(&event_loop).unwrap();
+    let window = winit::window::WindowBuilder::new()
+        .with_title("Cary").with_window_icon(Some(get_icon())).build(&event_loop).unwrap();
     // Web: Add canvas to page
     #[cfg(target_arch="wasm32")] {
         use winit::platform::web::WindowExtWebSys;
@@ -79,6 +80,13 @@ pub fn main() {
     })
 }
 
+fn get_icon() -> winit::window::Icon {
+    use image::GenericImageView;
+    let image = image::load_from_memory(include_bytes!("../icon.png")).unwrap();
+    let rgba = image.as_rgba8().unwrap().to_vec();
+    winit::window::Icon::from_rgba(rgba, image.dimensions().0 as u32, image.dimensions().1 as u32).unwrap()
+}
+
 #[derive(Copy, Clone)]
 struct Time (
     #[cfg(target_arch="wasm32")]
@@ -118,7 +126,7 @@ impl Time {
     }
 }
 
-struct Camera {
+pub struct Camera {
     pos: Vec2,
     size: f32
 }
@@ -127,6 +135,7 @@ pub struct World {
     pressed_keys: HashMap<VirtualKeyCode, bool>,
     entities: hecs::World,
     player: Entity,
+    cary: Entity,
     camera: Camera,
     /// In-game time in seconds
     time: f32
@@ -135,12 +144,14 @@ pub struct World {
 impl World {
     fn new() -> Self {
         let mut entities = hecs::World::new();
-        let player = entities.spawn(components::make_player(Vec2(0.0, 0.0)));
+        let player = entities.spawn(make_player(Vec2(0.0, 0.0)));
+        let cary = entities.spawn(make_cary(Vec2(0.0, 0.0)));
 
         World {
             pressed_keys: HashMap::new(),
             entities,
             player,
+            cary,
             camera: Camera { pos: Vec2::zero(), size: 7.0 },
             time: 0.0
         }
@@ -165,6 +176,7 @@ impl World {
         self.time += TIME_BETWEEN_UPDATES;
         self.update_player_input();
         self.update_player();
+        self.update_cary();
         self.update_physics();
         self.update_hazzards();
         self.update_animations();
@@ -176,18 +188,18 @@ impl World {
         use VirtualKeyCode::*;
         let mut control = self.entities.get_mut::<Controllable>(self.player).unwrap();
         control.vertical = match (self.pressed_keys.get(&W), self.pressed_keys.get(&S)) {
-            (Some(true), Some(true)) => VControl::None,
-            (Some(false), Some(false)) => VControl::None,
-            (Some(_), _) => VControl::Up,
-            (_, Some(_)) => VControl::Down,
-            (None, None) => VControl::None
+            (Some(true), Some(true)) => Vertical::None,
+            (Some(false), Some(false)) => Vertical::None,
+            (Some(_), _) => Vertical::Up,
+            (_, Some(_)) => Vertical::Down,
+            (None, None) => Vertical::None
         };
         control.horizontal = match (self.pressed_keys.get(&A), self.pressed_keys.get(&D)) {
-            (Some(true), Some(true)) => HControl::None,
-            (Some(false), Some(false)) => HControl::None,
-            (Some(_), _) => HControl::Left,
-            (_, Some(_)) => HControl::Right,
-            (None, None) => HControl::None
+            (Some(true), Some(true)) => Horizontal::None,
+            (Some(false), Some(false)) => Horizontal::None,
+            (Some(_), _) => Horizontal::Left,
+            (_, Some(_)) => Horizontal::Right,
+            (None, None) => Horizontal::None
         };
         control.attack = self.pressed_keys.contains_key(&J);
 
@@ -212,16 +224,16 @@ impl World {
             let horizontal_acc = 6.0;
             let max_horizontal_speed = 5.5;
             match control.vertical {
-                VControl::Up if sprite.finished() => {
+                Vertical::Up if sprite.finished() => {
                     physics.vel.1 = (physics.vel.1 + flap_acc).min(max_speed_upwards);
                     sprite.tex = textures::PLAYER_FLY;
                     sprite.timer = 0.0;
                 },
-                VControl::None if sprite.finished() => {
+                Vertical::None if sprite.finished() => {
                     sprite.tex = if physics.vel.1 < -0.3*dive_strenght {textures::PLAYER_DIVE} else {textures::PLAYER_IDLE};
                     physics.vel.1 += idle_acc * TIME_BETWEEN_UPDATES;
                 },
-                VControl::Down => {
+                Vertical::Down => {
                     sprite.tex = textures::PLAYER_DIVE;
                     if physics.vel.1 > -0.5*dive_strenght {
                         physics.vel.0 *= 1.0 - 0.2*dive_strenght * TIME_BETWEEN_UPDATES;
@@ -230,15 +242,50 @@ impl World {
                 },
                 _ => ()
             }
-            if (control.horizontal == HControl::Left) & (physics.vel.0 > -max_horizontal_speed) {
+            if (control.horizontal == Horizontal::Left) & (physics.vel.0 > -max_horizontal_speed) {
                 physics.vel.0 -= horizontal_acc * TIME_BETWEEN_UPDATES;
             }
-            if (control.horizontal == HControl::Right) & (physics.vel.0 < max_horizontal_speed) {
+            if (control.horizontal == Horizontal::Right) & (physics.vel.0 < max_horizontal_speed) {
                 physics.vel.0 += horizontal_acc * TIME_BETWEEN_UPDATES;
             }
             player.flap_cooldown -= TIME_BETWEEN_UPDATES;
             // TODO: idle, standing & dive animations
         }
+    }
+
+    fn update_cary(&mut self) {
+        let mut cary = self.entities.get_mut::<Cary>(self.cary).unwrap();
+        let pos = self.entities.get_mut::<Pos>(self.cary).unwrap();
+        let mut physics = self.entities.get_mut::<Physics>(self.cary).unwrap();
+
+        let walk_speed = 2.0;
+        let jump_speed = 6.7;
+        // Allow movement during junp
+        if (physics.collided.1 == Vertical::Down) | (physics.vel.1 > 0.0) {
+            physics.vel.0 = if cary.walk_right { walk_speed} else { -walk_speed };
+        }
+        if (physics.collided.1 == Vertical::Down) & 
+            (((physics.collided.0 == Horizontal::Left) & !cary.walk_right) 
+            |((physics.collided.0 == Horizontal::Right) & cary.walk_right))
+        {
+            // Decide whether to jump or to turn around
+            if self.is_free(&physics.bounds.moved(pos.curr + Vec2(if cary.walk_right {1.0} else {-1.0}, 2.1))) {
+                physics.vel.1 = jump_speed;
+            } else {
+                let mut sprite = self.entities.get_mut::<Sprite>(self.cary).unwrap();
+                sprite.mirror = cary.walk_right;
+                cary.walk_right ^= true;
+            }
+        }
+    }
+
+    fn is_free(&self, bounds: &Bounds) -> bool {
+        for (_, (collision_pos, collider)) in self.query::<(&Pos, &Collider)>().iter() {
+            if bounds.overlapps(collider.bounds.moved(collision_pos.curr)) {
+                return false
+            }
+        }
+        true
     }
 
     fn update_physics(&mut self) {
@@ -252,14 +299,17 @@ impl World {
 
             let bounds = physics.bounds.moved(pos.curr);
             let mut movement = physics.vel * TIME_BETWEEN_UPDATES;
+            physics.collided = (Horizontal::None, Vertical::None);
             for (_, (collision_pos, collider)) in self.query::<(&Pos, &Collider)>().iter() {
                 let collision = collider.bounds.moved(collision_pos.curr);
                 if bounds.moved(movement).overlapps(collision) {
                     if bounds.moved(Vec2(movement.0, 0.0)).overlapps(collision) {
+                        physics.collided.0 = if movement.0 > 0.0 { Horizontal::Right } else { Horizontal::Left };
                         physics.vel.0 = 0.0;
                         movement.0 = 0.0;
                     }
                     if bounds.moved(Vec2(0.0, movement.1)).overlapps(collision) {
+                        physics.collided.1 = if movement.1 > 0.0 { Vertical::Up } else { Vertical::Down };
                         physics.vel.1 = 0.0;
                         physics.vel.0 *= 1.0 - GROUND_FRICTION * TIME_BETWEEN_UPDATES;
                         movement.1 = 0.0;
@@ -267,6 +317,12 @@ impl World {
                 }
             }
             pos.curr += movement;
+        }
+
+        // Children
+        for (_, (pos, child_of)) in self.query::<(&mut Pos, &ChildOf)>().iter() {
+            let parent_pos = self.entities.get::<Pos>(child_of.parent).unwrap();
+            pos.curr = parent_pos.curr + child_of.offset;
         }
     }
 
@@ -308,7 +364,7 @@ impl World {
                     index_base.min(sprite.tex.len()-1)
                 }
             ];
-            renderer.draw(&self.camera, pos, sprite.tex_anchor, tex, sprite.layer)
+            renderer.draw(&self.camera, pos, sprite.tex_anchor, tex, sprite.layer, sprite.mirror)
         }
         renderer.render()
     }

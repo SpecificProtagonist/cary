@@ -1,3 +1,4 @@
+use hecs::Entity;
 use crate::{Vec2, Bounds};
 use crate::textures::*;
 use crate::renderer::Layer;
@@ -33,11 +34,12 @@ pub struct Physics {
     pub bounds: Bounds,
     pub vel: Vec2,
     pub mass: f32,
-    pub gravity: bool
+    pub gravity: bool,
+    pub collided: (Horizontal, Vertical)
 }
 
 pub struct ChildOf {
-    pub parent: hecs::Entity,
+    pub parent: Entity,
     pub offset: Vec2
 }
 
@@ -63,8 +65,8 @@ pub struct Flying {
 }
 
 pub struct Controllable {
-    pub horizontal: HControl,
-    pub vertical: VControl,
+    pub horizontal: Horizontal,
+    pub vertical: Vertical,
     pub attack: bool,
     pub special_ability: bool
 }
@@ -72,8 +74,8 @@ pub struct Controllable {
 impl Default for Controllable {
     fn default() -> Self {
         Controllable {
-            horizontal: HControl::None,
-            vertical: VControl::None,
+            horizontal: Horizontal::None,
+            vertical: Vertical::None,
             attack: false,
             special_ability: false
         }
@@ -81,9 +83,9 @@ impl Default for Controllable {
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
-pub enum HControl { None, Left, Right }
+pub enum Horizontal { None, Left, Right }
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
-pub enum VControl { None, Up, Down }
+pub enum Vertical { None, Up, Down }
 
 
 // TODO: maybe smallvec?
@@ -92,6 +94,7 @@ pub struct Sprite {
     pub tex_anchor: TexAnchor,
     pub layer: Layer,
     pub tex: &'static [TexCoords],
+    pub mirror: bool,
     pub frame_duration: f32,
     pub repeat: bool,
     pub timer: f32
@@ -103,6 +106,7 @@ impl Sprite {
             offset: Vec2::zero(),
             tex_anchor,
             tex: coords,
+            mirror: false,
             frame_duration: f32::INFINITY,
             repeat: false,
             timer: 0.0,
@@ -115,6 +119,7 @@ impl Sprite {
             offset: Vec2::zero(),
             tex_anchor,
             tex: coords,
+            mirror: false,
             frame_duration,
             repeat,
             timer: 0.0,
@@ -145,7 +150,8 @@ pub fn make_tile_background(x: i32, y: i32) -> (Pos, Sprite) {
         Sprite {
             offset: Vec2(0.0, -1.0),
             tex_anchor: TexAnchor::Bottom,
-            tex: crate::textures::TILE_FREE,
+            tex: TILE_FREE,
+            mirror: false,
             frame_duration: f32::INFINITY,
             repeat: false,
             timer: 0.0,
@@ -157,7 +163,7 @@ pub fn make_tile_background(x: i32, y: i32) -> (Pos, Sprite) {
 pub fn make_tile_solid(x: i32, y: i32) -> (Pos, Sprite, Collider) {
     (
         Vec2(x as f32, y as f32).into(),
-        Sprite::single(crate::textures::TILE_SOLID, TexAnchor::Bottom, Layer::ForegroundTile),
+        Sprite::single(TILE_SOLID, TexAnchor::Bottom, Layer::ForegroundTile),
         Collider {
             bounds: Bounds::around(Vec2(0.0, 0.5), Vec2(1.0, 1.0))
         }
@@ -168,33 +174,64 @@ pub fn make_spikes(x: i32, y: i32) -> (Pos, Hazzard, Sprite) {
     (
         Vec2(x as f32, y as f32).into(),
         Hazzard {
-            bounds: Bounds::around(Vec2(0.0, 0.5), Vec2(1.0, 1.0))
+            bounds: Bounds::around(Vec2(0.0, 0.4), Vec2(1.0, 0.8))
         },
-        Sprite::single(crate::textures::SPIKES, TexAnchor::Bottom, Layer::Foreground),
+        Sprite::single(SPIKES, TexAnchor::Bottom, Layer::Foreground),
     )
 }
 
 pub struct Player {
-    pub flap_cooldown: f32
+    pub flap_cooldown: f32,
+    pub carying: Option<Entity>
 }
 
 pub fn make_player(pos: Vec2) -> (Player, Pos, Physics, Controllable, Killable, Sprite){
     const SIZE: f32 = 0.65;
     let bounds = Bounds::around(Vec2::zero(), Vec2(SIZE, SIZE));
     (
-        Player { flap_cooldown: 0.0 },
+        Player { 
+            flap_cooldown: 0.0,
+            carying: None
+        },
         pos.into(),
         Physics {
             bounds,
             vel: Vec2::zero(),
             mass: 0.25,
-            gravity: true
+            gravity: true,
+            collided: (Horizontal::None, Vertical::None)
         },
         Controllable::default(),
         Killable {
             bounds,
             loss_on_death: true
         },
-        Sprite::ani(crate::textures::PLAYER_FLY, TexAnchor::Center, Layer::Foreground, 0.08, false),
+        Sprite::ani(PLAYER_FLY, TexAnchor::Center, Layer::Foreground, 0.08, false),
+    )
+}
+
+pub struct Cary {
+    pub walk_right: bool
+}
+
+pub fn make_cary(pos: Vec2) -> (Cary, Pos, Physics, Killable, Sprite) {
+    let bounds = Bounds::around(Vec2(0.0, 0.6), Vec2(0.6, 1.2));
+    (
+        Cary {
+            walk_right: true
+        },
+        pos.into(),
+        Physics {
+            bounds,
+            vel: Vec2::zero(),
+            mass: 1.0,
+            gravity: true,
+            collided: (Horizontal::None, Vertical::None)
+        },
+        Killable {
+            bounds,
+            loss_on_death: true
+        },
+        Sprite::ani(CARY_WALK, TexAnchor::Bottom, Layer::Foreground, 0.2, true)
     )
 }
