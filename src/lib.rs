@@ -201,7 +201,7 @@ impl World {
             (_, Some(_)) => Horizontal::Right,
             (None, None) => Horizontal::None
         };
-        control.attack = self.pressed_keys.contains_key(&J);
+        control.pick_up = *self.pressed_keys.get(&J).unwrap_or(&false);
 
         for value in self.pressed_keys.values_mut() {
             *value = false;
@@ -215,42 +215,84 @@ impl World {
     }
 
     fn update_player(&mut self) {
-        for (_, (player, physics, control, sprite)) in self.query::<(&mut Player, &mut Physics, &Controllable, &mut Sprite)>().iter() {
-            // Flap
-            let flap_acc = 5.6;
-            let max_speed_upwards = 10.0;
-            let idle_acc = 5.0;
-            let dive_strenght = 25.0;
-            let horizontal_acc = 6.0;
-            let max_horizontal_speed = 5.5;
-            match control.vertical {
-                Vertical::Up if sprite.finished() => {
-                    physics.vel.1 = (physics.vel.1 + flap_acc).min(max_speed_upwards);
-                    sprite.tex = textures::PLAYER_FLY;
-                    sprite.timer = 0.0;
-                },
-                Vertical::None if sprite.finished() => {
-                    sprite.tex = if physics.vel.1 < -0.3*dive_strenght {textures::PLAYER_DIVE} else {textures::PLAYER_IDLE};
-                    physics.vel.1 += idle_acc * TIME_BETWEEN_UPDATES;
-                },
-                Vertical::Down => {
-                    sprite.tex = textures::PLAYER_DIVE;
-                    if physics.vel.1 > -0.5*dive_strenght {
-                        physics.vel.0 *= 1.0 - 0.2*dive_strenght * TIME_BETWEEN_UPDATES;
-                        physics.vel.1 -= dive_strenght * TIME_BETWEEN_UPDATES;
-                    }
-                },
-                _ => ()
-            }
-            if (control.horizontal == Horizontal::Left) & (physics.vel.0 > -max_horizontal_speed) {
-                physics.vel.0 -= horizontal_acc * TIME_BETWEEN_UPDATES;
-            }
-            if (control.horizontal == Horizontal::Right) & (physics.vel.0 < max_horizontal_speed) {
-                physics.vel.0 += horizontal_acc * TIME_BETWEEN_UPDATES;
-            }
-            player.flap_cooldown -= TIME_BETWEEN_UPDATES;
-            // TODO: idle, standing & dive animations
+        let mut player_query = 
+            self.entities.query_one::<(&mut Player, &mut Physics, &Controllable, &mut Children, &mut Sprite)>(self.player).unwrap();
+        let (player, physics, control, children, sprite) = player_query.get().unwrap();
+    
+        // Flap
+        let flap_acc = 5.6;
+        let flap_fall_decell = 9.0;
+        let max_speed_upwards = 10.0;
+        let idle_acc = 5.0;
+        let dive_strenght = 25.0;
+        let horizontal_acc = 7.8;
+        let max_horizontal_speed = 4.0;
+        match control.vertical {
+            Vertical::Up if sprite.finished() => {
+                if physics.vel.1 < 0.0 {
+                    physics.vel.1 *= 1.0 - flap_fall_decell * TIME_BETWEEN_UPDATES;
+                }
+                physics.vel.1 = (physics.vel.1 + flap_acc).min(max_speed_upwards);
+                sprite.tex = textures::PLAYER_FLY;
+                sprite.timer = 0.0;
+            },
+            Vertical::None if sprite.finished() => {
+                sprite.tex = if physics.vel.1 < -0.3*dive_strenght {textures::PLAYER_DIVE} else {textures::PLAYER_IDLE};
+                physics.vel.1 += idle_acc * TIME_BETWEEN_UPDATES;
+            },
+            Vertical::Down => {
+                sprite.tex = textures::PLAYER_DIVE;
+                if physics.vel.1 > -0.5*dive_strenght {
+                    physics.vel.0 *= 1.0 - 0.2*dive_strenght * TIME_BETWEEN_UPDATES;
+                    physics.vel.1 -= dive_strenght * TIME_BETWEEN_UPDATES;
+                }
+            },
+            _ => ()
         }
+        if (control.horizontal == Horizontal::Left) & (physics.vel.0 > -max_horizontal_speed) {
+            physics.vel.0 -= horizontal_acc * TIME_BETWEEN_UPDATES;
+        }
+        if (control.horizontal == Horizontal::Right) & (physics.vel.0 < max_horizontal_speed) {
+            physics.vel.0 += horizontal_acc * TIME_BETWEEN_UPDATES;
+        }
+        player.flap_cooldown -= TIME_BETWEEN_UPDATES;
+        // TODO: standing sprite
+
+        if control.pick_up {
+            if let Some(carried) = player.carrying {
+                player.carrying = None;
+                children.0.retain(|child| *child != carried);
+                drop(player_query);
+                self.entities.get_mut::<Carryable>(carried).unwrap().carried = false;
+                self.entities.remove_one::<ChildOf>(carried).unwrap();
+            } else if let Some(to_be_carried) = self.find_pickupable() {
+                player.carrying = Some(to_be_carried);
+                children.0.push(to_be_carried);
+                drop(player_query);
+                let mut carryable = self.entities.get_mut::<Carryable>(to_be_carried).unwrap();
+                carryable.carried = true;
+                let carry_offset = carryable.carry_offset;
+                drop(carryable);
+                let child_bounds = self.entities.get_mut::<Physics>(to_be_carried).unwrap().bounds;
+                self.entities.insert_one(to_be_carried,
+                    ChildOf {
+                        parent: self.player,
+                        offset: carry_offset,
+                        collision: child_bounds
+                    }
+                ).unwrap();
+            }
+        }
+    }
+
+    fn find_pickupable(&self) -> Option<Entity> {
+        let player_pos = self.entities.get::<Pos>(self.player).unwrap();
+        for (entity, (pos, carryable)) in self.query::<(&Pos, &Carryable)>().iter() {
+            if (carryable.detect_bounds + pos.curr).contains(player_pos.curr) {
+                return Some(entity)
+            }
+        }
+        None
     }
 
     fn update_cary(&mut self) {
@@ -269,7 +311,7 @@ impl World {
             |((physics.collided.0 == Horizontal::Right) & cary.walk_right))
         {
             // Decide whether to jump or to turn around
-            if self.is_free(&physics.bounds.moved(pos.curr + Vec2(if cary.walk_right {1.0} else {-1.0}, 2.1))) {
+            if self.is_free(&(physics.bounds + pos.curr + Vec2(if cary.walk_right {1.0} else {-1.0}, 2.1))) {
                 physics.vel.1 = jump_speed;
             } else {
                 let mut sprite = self.entities.get_mut::<Sprite>(self.cary).unwrap();
@@ -281,7 +323,7 @@ impl World {
 
     fn is_free(&self, bounds: &Bounds) -> bool {
         for (_, (collision_pos, collider)) in self.query::<(&Pos, &Collider)>().iter() {
-            if bounds.overlapps(collider.bounds.moved(collision_pos.curr)) {
+            if bounds.overlapps(collider.bounds + collision_pos.curr) {
                 return false
             }
         }
@@ -292,31 +334,40 @@ impl World {
         const GRAVITY: f32 = 10.0;
         const TERMINAL_VELOCITY: f32 = 12.0;
         const GROUND_FRICTION: f32 = 4.5;
-        for (_, (pos, physics)) in self.query::<(&mut Pos, &mut Physics)>().iter() {
+        for (entity, physics) in self.query::<&mut Physics>().iter() {
             if physics.vel.1 > -TERMINAL_VELOCITY {
                 physics.vel.1 -= GRAVITY * TIME_BETWEEN_UPDATES;
             }
 
-            let bounds = physics.bounds.moved(pos.curr);
             let mut movement = physics.vel * TIME_BETWEEN_UPDATES;
             physics.collided = (Horizontal::None, Vertical::None);
+            let bounds = physics.bounds + self.entities.get::<Pos>(entity).unwrap().curr;
+            let children = self.entities.get::<Children>(entity).ok();
+            let entities = &self.entities;
             for (_, (collision_pos, collider)) in self.query::<(&Pos, &Collider)>().iter() {
-                let collision = collider.bounds.moved(collision_pos.curr);
-                if bounds.moved(movement).overlapps(collision) {
-                    if bounds.moved(Vec2(movement.0, 0.0)).overlapps(collision) {
-                        physics.collided.0 = if movement.0 > 0.0 { Horizontal::Right } else { Horizontal::Left };
-                        physics.vel.0 = 0.0;
-                        movement.0 = 0.0;
-                    }
-                    if bounds.moved(Vec2(0.0, movement.1)).overlapps(collision) {
-                        physics.collided.1 = if movement.1 > 0.0 { Vertical::Up } else { Vertical::Down };
-                        physics.vel.1 = 0.0;
-                        physics.vel.0 *= 1.0 - GROUND_FRICTION * TIME_BETWEEN_UPDATES;
-                        movement.1 = 0.0;
+                let collision = collider.bounds + collision_pos.curr;
+                for bounds in Some(bounds).into_iter().chain(children.iter().flat_map(
+                    |children| children.0.iter().filter_map(
+                        |child| Some(entities.get::<ChildOf>(*child).ok()?.collision
+                                            + entities.get::<Pos>(*child).ok()?.curr)
+                    ))) 
+                {
+                    if (bounds + movement).overlapps(collision) {
+                        if (bounds + Vec2(movement.0, 0.0)).overlapps(collision) {
+                            physics.collided.0 = if movement.0 > 0.0 { Horizontal::Right } else { Horizontal::Left };
+                            physics.vel.0 = 0.0;
+                            movement.0 = 0.0;
+                        }
+                        if (bounds + Vec2(0.0, movement.1)).overlapps(collision) {
+                            physics.collided.1 = if movement.1 > 0.0 { Vertical::Up } else { Vertical::Down };
+                            physics.vel.1 = 0.0;
+                            physics.vel.0 *= 1.0 - GROUND_FRICTION * TIME_BETWEEN_UPDATES;
+                            movement.1 = 0.0;
+                        }
                     }
                 }
             }
-            pos.curr += movement;
+            self.entities.get_mut::<Pos>(entity).unwrap().curr += movement;
         }
 
         // Children
@@ -329,7 +380,7 @@ impl World {
     fn update_hazzards(&mut self) {
         for (_, (pos, killable)) in self.query::<(&Pos, &Killable)>().iter() {
             for (_, (hazzard_pos, hazzard)) in self.query::<(&Pos, &Hazzard)>().iter() {
-                if killable.bounds.moved(pos.curr).overlapps(hazzard.bounds.moved(hazzard_pos.curr)) {
+                if (killable.bounds + pos.curr).overlapps(hazzard.bounds + hazzard_pos.curr) {
                     if killable.loss_on_death {
                         todo!();
                     } else {
@@ -366,6 +417,16 @@ impl World {
             ];
             renderer.draw(&self.camera, pos, sprite.tex_anchor, tex, sprite.layer, sprite.mirror)
         }
+
+        if let Some(carryable) = self.find_pickupable() {
+            let player_pos = self.entities.get::<Pos>(self.player).unwrap();
+            let carryable = self.entities.get::<Carryable>(carryable).unwrap();
+            if !carryable.carried {
+                renderer.draw(&self.camera, player_pos.curr + carryable.carry_offset * 0.5, 
+                    textures::TexAnchor::Center, &textures::PICKUP_HINT[0], Layer::ForegroundPickupHint, false);
+            }
+        }
+
         renderer.render()
     }
 }

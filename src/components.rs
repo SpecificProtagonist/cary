@@ -38,10 +38,13 @@ pub struct Physics {
     pub collided: (Horizontal, Vertical)
 }
 
+// Carefull: Allways use both ChildOf and Children 
 pub struct ChildOf {
     pub parent: Entity,
-    pub offset: Vec2
+    pub offset: Vec2,
+    pub collision: Bounds // Neccessary because we can't borrow physics
 }
+pub struct Children(pub Vec<Entity>);
 
 pub struct Killable {
     pub bounds: Bounds,
@@ -50,6 +53,12 @@ pub struct Killable {
 
 pub struct Hazzard {
     pub bounds: Bounds
+}
+
+pub struct Carryable {
+    pub detect_bounds: Bounds,
+    pub carry_offset: Vec2,
+    pub carried: bool
 }
 
 pub struct Walking {
@@ -67,8 +76,7 @@ pub struct Flying {
 pub struct Controllable {
     pub horizontal: Horizontal,
     pub vertical: Vertical,
-    pub attack: bool,
-    pub special_ability: bool
+    pub pick_up: bool,
 }
 
 impl Default for Controllable {
@@ -76,8 +84,7 @@ impl Default for Controllable {
         Controllable {
             horizontal: Horizontal::None,
             vertical: Vertical::None,
-            attack: false,
-            special_ability: false
+            pick_up: false,
         }
     }
 }
@@ -182,16 +189,16 @@ pub fn make_spikes(x: i32, y: i32) -> (Pos, Hazzard, Sprite) {
 
 pub struct Player {
     pub flap_cooldown: f32,
-    pub carying: Option<Entity>
+    pub carrying: Option<Entity>
 }
 
-pub fn make_player(pos: Vec2) -> (Player, Pos, Physics, Controllable, Killable, Sprite){
+pub fn make_player(pos: Vec2) -> (Player, Pos, Physics, Controllable, Children, Killable, Sprite){
     const SIZE: f32 = 0.65;
     let bounds = Bounds::around(Vec2::zero(), Vec2(SIZE, SIZE));
     (
         Player { 
             flap_cooldown: 0.0,
-            carying: None
+            carrying: None
         },
         pos.into(),
         Physics {
@@ -202,6 +209,7 @@ pub fn make_player(pos: Vec2) -> (Player, Pos, Physics, Controllable, Killable, 
             collided: (Horizontal::None, Vertical::None)
         },
         Controllable::default(),
+        Children(Vec::new()),
         Killable {
             bounds,
             loss_on_death: true
@@ -214,7 +222,7 @@ pub struct Cary {
     pub walk_right: bool
 }
 
-pub fn make_cary(pos: Vec2) -> (Cary, Pos, Physics, Killable, Sprite) {
+pub fn make_cary(pos: Vec2) -> (Cary, Pos, Physics, Killable, Carryable, Sprite) {
     let bounds = Bounds::around(Vec2(0.0, 0.6), Vec2(0.6, 1.2));
     (
         Cary {
@@ -231,6 +239,11 @@ pub fn make_cary(pos: Vec2) -> (Cary, Pos, Physics, Killable, Sprite) {
         Killable {
             bounds,
             loss_on_death: true
+        },
+        Carryable {
+            detect_bounds: Bounds::around(Vec2(0.0, 1.6), Vec2(1.2, 1.0)),
+            carry_offset: Vec2(0.0, -1.3),
+            carried: false
         },
         Sprite::ani(CARY_WALK, TexAnchor::Bottom, Layer::Foreground, 0.2, true)
     )

@@ -95,6 +95,23 @@ impl std::ops::DivAssign<f32> for Vec2 {
     }
 }
 
+impl std::ops::Add<Vec2> for Bounds {
+    type Output = Bounds;
+    fn add(self, rhs: Vec2) -> Self::Output {
+        Bounds {
+            min: self.min + rhs,
+            max: self.max + rhs
+        }
+    }
+}
+
+impl std::ops::AddAssign<Vec2> for Bounds {
+    fn add_assign(&mut self, rhs: Vec2) {
+        self.min += rhs;
+        self.max += rhs;
+    }
+}
+
 
 
 /// Axis-aligned bounding box
@@ -120,17 +137,14 @@ impl Bounds {
         self.max - self.min
     }
 
-    pub fn moved(self, vec: Vec2) -> Self {
-        Bounds {
-            min: self.min + vec,
-            max: self.max + vec
-        }
-    }
-
     pub fn overlapps(self, other: Self) -> bool {
         (self.min.0 < other.max.0) & (self.max.0 > other.min.0)
         &
         (self.min.1 < other.max.1) & (self.max.1 > other.min.1)
+    }
+
+    pub fn contains(self, pos: Vec2) -> bool {
+        (pos.0  > self.min.0) & (pos.0 < self.max.0) & (pos.1 > self.min.1) & (pos.1 < self.max.1)
     }
 
     /*
