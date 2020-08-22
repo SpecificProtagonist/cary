@@ -132,6 +132,7 @@ pub struct Camera {
 }
 
 pub struct World {
+    state: WorldState,
     pressed_keys: HashMap<VirtualKeyCode, bool>,
     entities: hecs::World,
     player: Entity,
@@ -148,6 +149,7 @@ impl World {
         let cary = entities.spawn(make_cary(Vec2(0.0, 0.0)));
 
         World {
+            state: WorldState::Running,
             pressed_keys: HashMap::new(),
             entities,
             player,
@@ -172,15 +174,26 @@ impl World {
     }
 
     fn update(&mut self) {
-        self.update_position_interpol();
-        self.time += TIME_BETWEEN_UPDATES;
-        self.update_player_input();
-        self.update_player();
-        self.update_cary();
-        self.update_physics();
-        self.update_hazzards();
-        self.update_animations();
-        self.update_camera();
+        match self.state {
+            WorldState::Running => {
+                self.update_position_interpol();
+                self.time += TIME_BETWEEN_UPDATES;
+                self.update_player_input();
+                self.update_player();
+                self.update_cary();
+                self.update_physics();
+                self.update_hazzards();
+                self.update_exits();
+                self.update_animations();
+                self.update_camera();
+            },
+            WorldState::Loss(_, ref mut time) => {
+                *time += TIME_BETWEEN_UPDATES;
+            },
+            WorldState::Victory(_, ref mut time) => {
+                *time += TIME_BETWEEN_UPDATES;
+            }
+        }
     }
 
     fn update_player_input(&mut self) {
@@ -380,16 +393,33 @@ impl World {
     }
 
     fn update_hazzards(&mut self) {
+        let mut loss = None;
         for (_, (pos, killable)) in self.query::<(&Pos, &Killable)>().iter() {
             for (_, (hazzard_pos, hazzard)) in self.query::<(&Pos, &Hazzard)>().iter() {
                 if (killable.bounds + pos.curr).overlapps(hazzard.bounds + hazzard_pos.curr) {
                     if killable.loss_on_death {
-                        todo!();
+                        loss = Some(pos.curr);
                     } else {
                         todo!();
                     }
                 }
             }
+        }
+        if let Some(pos) = loss {
+            self.state = WorldState::Loss(pos, 0.0)
+        }
+    }
+
+    fn update_exits(&mut self) {
+        let cary_pos = self.entities.get::<Pos>(self.cary).unwrap().curr;
+        let mut reached = false;
+        for (_, (pos, exit)) in self.query::<(&Pos, &Exit)>().iter() {
+            if (exit.0 + pos.curr).contains(cary_pos) {
+                reached = true;
+            }
+        }
+        if reached {
+            self.state = WorldState::Victory(cary_pos, 0.0);
         }
     }
 
@@ -429,6 +459,23 @@ impl World {
             }
         }
 
+        let transition_speed = 1.3;
+        match self.state {
+            WorldState::Running => {},
+            WorldState::Loss(center, time) => {
+                renderer.set_transition(&self.camera, center, transition_speed * time, false);
+            },
+            WorldState::Victory(center, time) => {
+                renderer.set_transition(&self.camera, center, transition_speed * time, true);
+            }
+        }
+
         renderer.render()
     }
+}
+
+enum WorldState {
+    Running,
+    Loss(Vec2, f32),
+    Victory(Vec2, f32)
 }

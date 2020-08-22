@@ -10,6 +10,8 @@ use crate::Vec2;
 use super::{Rgb, Layer};
 
 
+// TODO: remove light stuffs
+
 
 #[repr(C)]
 #[derive(Copy, Clone)]
@@ -49,8 +51,8 @@ pub struct Renderer {
     depth_tex_view: TextureView,
     swap_chain: SwapChain,
     swap_chain_desc: SwapChainDescriptor,
-    /*uniform_buffer: Buffer,
-    uniform_bind_group: BindGroup,*/
+    uniform_buffer: Buffer,
+    uniform_bind_group: BindGroup,
 
     vertex_buffer: Buffer,
     light_instances: Vec<LightInstance>,
@@ -222,10 +224,41 @@ impl Renderer {
             sample_mask: !0,
             alpha_to_coverage_enabled: false,
         });
+        
+        let uniform_bind_group_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+            entries: Cow::Owned(vec![
+                BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: ShaderStage::FRAGMENT,
+                    ty: BindingType::UniformBuffer {
+                        dynamic: false,
+                        min_binding_size: None
+                    },
+                    count: None
+                }
+            ]),
+            label: None
+        });
+
+        let uniform_buffer = device.create_buffer_with_data(
+            bytemuck::cast_slice(&[0.0f32; 5]),
+            wgpu::BufferUsage::UNIFORM | wgpu::BufferUsage::COPY_DST,
+        );
+
+        let uniform_bind_group= device.create_bind_group(&BindGroupDescriptor {
+            layout: &uniform_bind_group_layout,
+            entries: Cow::Owned(vec![
+                BindGroupEntry {
+                    binding: 0,
+                    resource: BindingResource::Buffer(uniform_buffer.slice(..))
+                }
+            ]),
+            label: None
+        });
 
         let render_pipeline_world = device.create_render_pipeline(&RenderPipelineDescriptor {
             layout: &device.create_pipeline_layout(&PipelineLayoutDescriptor {
-                bind_group_layouts: Cow::Owned(vec![&tex_bind_group_layout, &tex_light_bind_group_layout /*, &uniform_bind_group_layout*/]),
+                bind_group_layouts: Cow::Owned(vec![&tex_bind_group_layout, &tex_light_bind_group_layout, &uniform_bind_group_layout]),
                 push_constant_ranges: Cow::Owned(vec![])
             }),
             vertex_stage: ProgrammableStageDescriptor {
@@ -354,8 +387,8 @@ impl Renderer {
             depth_tex_view: depth_tex_view,
             swap_chain,
             swap_chain_desc,
-            /*uniform_buffer,
-            uniform_bind_group,*/
+            uniform_buffer,
+            uniform_bind_group,
 
             vertex_buffer,
             light_instances: Vec::new(),
@@ -610,12 +643,29 @@ impl Renderer {
         render_pass.set_pipeline(&self.render_pipeline_world);
         render_pass.set_bind_group(0, &self.tex_bind_group, &[]);
         render_pass.set_bind_group(1, &self.tex_light_bind_group, &[]);
+        render_pass.set_bind_group(2, &self.uniform_bind_group, &[]);
         render_pass.set_vertex_buffer(0, instance_buffer_world.slice(..));
         render_pass.set_vertex_buffer(1, self.vertex_buffer.slice(..));
         render_pass.draw(0..6, 0..(self.sprite_instances.len() as u32));
         drop(render_pass);
         self.sprite_instances.clear();
 
+
+        self.queue.submit(Some(encoder.finish()));
+    }
+
+    pub fn set_transition(&mut self, camera: &crate::Camera, center: Vec2, distance: f32, victory: bool) {
+        let aspect_ratio = self.swap_chain_desc.height as f32 / self.swap_chain_desc.width as f32;
+        let screen_pos = ((center-camera.pos) * aspect_ratio/camera.size + Vec2(1.0, 1.0)) / 2.0;
+
+        let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {label: None});
+
+        let staging_buffer = self.device.create_buffer_with_data(
+            bytemuck::cast_slice(&[screen_pos.0, screen_pos.1, distance, aspect_ratio, if victory {1.0} else {0.0} ]),
+            wgpu::BufferUsage::COPY_SRC,
+        );
+
+        encoder.copy_buffer_to_buffer(&staging_buffer, 0, &self.uniform_buffer, 0, 4*5 as wgpu::BufferAddress);
 
         self.queue.submit(Some(encoder.finish()));
     }
@@ -645,24 +695,5 @@ impl Renderer {
             })
         }
     }
-/*
-    pub fn draw_light(&mut self, pos: Vec2, tex: &TexCoords, size: Vec2, color: Rgb) {
-        let resize = Vec2(self.swap_chain_desc.height as f32 / self.swap_chain_desc.width as f32, 1.0) / self.camera_size;
-        let screen_pos = (pos-self.camera_pos) * resize;
-        let screen_size = size * resize;
-        if (screen_pos.0 + screen_size.0/2.0 > -1.0) &
-           (screen_pos.1 + screen_size.1/2.0 > -1.0) &
-           (screen_pos.0 - screen_size.0/2.0 <  1.0) &
-           (screen_pos.1 - screen_size.1/2.0 <  1.0) 
-        {
-            self.light_instances.push(LightInstance {
-                pos: screen_pos,
-                size: screen_size,
-                uv_center: tex.center * textures::UV_COORDS_FACTOR,
-                uv_size: tex.size * textures::UV_COORDS_FACTOR,
-                color: (color.0, color.1, color.2)
-            })
-        }
-    }
-    */
+
 }

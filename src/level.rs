@@ -23,6 +23,10 @@ pub fn load() -> World {
                 let mut cary_pos = world.entities.get_mut::<Pos>(world.cary).unwrap();
                 cary_pos.curr = Vec2(x as f32, y as f32);
             },
+            'E' => {
+                background = true;
+                world.entities.spawn(make_exit(x, y));
+            },
             '#' => {
                 world.entities.spawn(make_tile_solid(x, y));
             },

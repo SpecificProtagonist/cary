@@ -255,6 +255,16 @@ pub fn make_cary(pos: Vec2) -> (Cary, Pos, Physics, Killable, Carryable, Sprite)
             carry_offset: Vec2(0.0, -1.3),
             carried: false
         },
-        Sprite::ani(CARY_WALK, TexAnchor::Bottom, Layer::Foreground, 0.2, true)
+        Sprite::ani(CARY_WALK, TexAnchor::Bottom, Layer::ForegroundPlayer, 0.2, true)
+    )
+}
+
+pub struct Exit(pub Bounds);
+
+pub fn make_exit(x: i32, y: i32) -> (Pos, Exit, Sprite) {
+    (
+        Vec2(x as f32, y as f32).into(),
+        Exit( Bounds::around(Vec2(0.0, 0.7), Vec2(0.3, 1.4))),
+        Sprite::single(EXIT, TexAnchor::Bottom, Layer::Foreground)
     )
 }
