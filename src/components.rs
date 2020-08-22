@@ -187,6 +187,16 @@ pub fn make_spikes(x: i32, y: i32) -> (Pos, Hazzard, Sprite) {
     )
 }
 
+pub fn make_trap_ceiling(x: i32, y: i32) -> (Pos, Hazzard, Sprite) {
+    (
+        Vec2(x as f32, y as f32).into(),
+        Hazzard {
+            bounds: Bounds::around(Vec2(0.0, 0.7), Vec2(1.0, 0.6))
+        },
+        Sprite::ani(TRAP_CEIL, TexAnchor::Bottom, Layer::Foreground, 0.13, true),
+    )
+}
+
 pub struct Player {
     pub flap_cooldown: f32,
     pub carrying: Option<Entity>

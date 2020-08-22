@@ -296,27 +296,29 @@ impl World {
     }
 
     fn update_cary(&mut self) {
-        let mut cary = self.entities.get_mut::<Cary>(self.cary).unwrap();
-        let pos = self.entities.get_mut::<Pos>(self.cary).unwrap();
-        let mut physics = self.entities.get_mut::<Physics>(self.cary).unwrap();
+        if !self.entities.get::<Carryable>(self.cary).unwrap().carried {
+            let mut cary = self.entities.get_mut::<Cary>(self.cary).unwrap();
+            let pos = self.entities.get_mut::<Pos>(self.cary).unwrap();
+            let mut physics = self.entities.get_mut::<Physics>(self.cary).unwrap();
 
-        let walk_speed = 2.0;
-        let jump_speed = 6.7;
-        // Allow movement during junp
-        if (physics.collided.1 == Vertical::Down) | (physics.vel.1 > 0.0) {
-            physics.vel.0 = if cary.walk_right { walk_speed} else { -walk_speed };
-        }
-        if (physics.collided.1 == Vertical::Down) & 
-            (((physics.collided.0 == Horizontal::Left) & !cary.walk_right) 
-            |((physics.collided.0 == Horizontal::Right) & cary.walk_right))
-        {
-            // Decide whether to jump or to turn around
-            if self.is_free(&(physics.bounds + pos.curr + Vec2(if cary.walk_right {1.0} else {-1.0}, 2.1))) {
-                physics.vel.1 = jump_speed;
-            } else {
-                let mut sprite = self.entities.get_mut::<Sprite>(self.cary).unwrap();
-                sprite.mirror = cary.walk_right;
-                cary.walk_right ^= true;
+            let walk_speed = 2.0;
+            let jump_speed = 6.7;
+            // Allow movement during junp
+            if (physics.collided.1 == Vertical::Down) | (physics.vel.1 > 0.0) {
+                physics.vel.0 = if cary.walk_right { walk_speed} else { -walk_speed };
+            }
+            if (physics.collided.1 == Vertical::Down) & 
+                (((physics.collided.0 == Horizontal::Left) & !cary.walk_right) 
+                |((physics.collided.0 == Horizontal::Right) & cary.walk_right))
+            {
+                // Decide whether to jump or to turn around
+                if self.is_free(&(physics.bounds + pos.curr + Vec2(if cary.walk_right {1.0} else {-1.0}, 2.1))) {
+                    physics.vel.1 = jump_speed;
+                } else {
+                    let mut sprite = self.entities.get_mut::<Sprite>(self.cary).unwrap();
+                    sprite.mirror = cary.walk_right;
+                    cary.walk_right ^= true;
+                }
             }
         }
     }

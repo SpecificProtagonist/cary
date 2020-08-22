@@ -33,6 +33,10 @@ pub fn load() -> World {
                 background = true;
                 world.entities.spawn(make_spikes(x, y));
             },
+            'u' => {
+                background = true;
+                world.entities.spawn(make_trap_ceiling(x, y));
+            },
             '.' => (),
             '\n' => {
                 y -= 1;
