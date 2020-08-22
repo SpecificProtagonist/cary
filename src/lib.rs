@@ -2,6 +2,7 @@ mod textures;
 mod math;
 mod components;
 mod renderer;
+mod level;
 
 use std::collections::HashMap;
 use winit::{
@@ -31,7 +32,7 @@ pub fn wasm_main() {
 
 pub fn main() {
     
-    let mut world = World::new();
+    let mut world = level::load();
 
     let event_loop = EventLoop::new();
     // There will be only one window -> ignore window ids in events
@@ -117,10 +118,16 @@ impl Time {
     }
 }
 
-struct World {
+struct Camera {
+    pos: Vec2,
+    size: f32
+}
+
+pub struct World {
     pressed_keys: HashMap<VirtualKeyCode, bool>,
     entities: hecs::World,
     player: Entity,
+    camera: Camera,
     /// In-game time in seconds
     time: f32
 }
@@ -128,22 +135,13 @@ struct World {
 impl World {
     fn new() -> Self {
         let mut entities = hecs::World::new();
-
-        // Test
         let player = entities.spawn(components::make_player(Vec2(0.0, 0.0)));
-
-        for x in -10..11 {
-            for y in -10..11 {
-                entities.spawn((
-                    Pos::from(Vec2(x as f32, y as f32)), 
-                    Sprite::single(textures::TILE_FREE, textures::TexAnchor::Center, Layer::BackgroundTile)));
-            }
-        }
 
         World {
             pressed_keys: HashMap::new(),
             entities,
             player,
+            camera: Camera { pos: Vec2::zero(), size: 7.0 },
             time: 0.0
         }
     }
@@ -169,6 +167,7 @@ impl World {
         self.update_player();
         self.update_physics();
         self.update_animations();
+        self.update_camera();
     }
 
     fn update_player_input(&mut self) {
@@ -203,50 +202,70 @@ impl World {
     }
 
     fn update_player(&mut self) {
-        for (_, (_, physics, control, sprite)) in self.query::<(&Player, &mut Physics, &Controllable, &Sprite)>().iter() {
+        for (_, (player, physics, control, sprite)) in self.query::<(&mut Player, &mut Physics, &Controllable, &mut Sprite)>().iter() {
             // Flap
-            let flap_acc = 5.2;
-            let flap_acc_idle = 2.0;
+            let flap_acc = 5.6;
             let max_speed_upwards = 10.0;
+            let idle_acc = 5.0;
+            let dive_strenght = 25.0;
             let horizontal_acc = 6.0;
-            let max_horizontal_speed = 10.0;
-            if sprite.timer() < TIME_BETWEEN_UPDATES {
-                physics.vel.1 = (physics.vel.1 + match control.vertical {
-                    VControl::Up => flap_acc,
-                    VControl::None => flap_acc_idle,
-                    VControl::Down => 0.0
-                }).min(max_speed_upwards)
+            let max_horizontal_speed = 5.5;
+            match control.vertical {
+                VControl::Up if sprite.finished() => {
+                    physics.vel.1 = (physics.vel.1 + flap_acc).min(max_speed_upwards);
+                    sprite.tex = textures::PLAYER_FLY;
+                    sprite.timer = 0.0;
+                },
+                VControl::None if sprite.finished() => {
+                    sprite.tex = if physics.vel.1 < -0.3*dive_strenght {textures::PLAYER_DIVE} else {textures::PLAYER_IDLE};
+                    physics.vel.1 += idle_acc * TIME_BETWEEN_UPDATES;
+                },
+                VControl::Down => {
+                    sprite.tex = textures::PLAYER_DIVE;
+                    if physics.vel.1 > -0.5*dive_strenght {
+                        physics.vel.0 *= 1.0 - 0.2*dive_strenght * TIME_BETWEEN_UPDATES;
+                        physics.vel.1 -= dive_strenght * TIME_BETWEEN_UPDATES;
+                    }
+                },
+                _ => ()
             }
             if (control.horizontal == HControl::Left) & (physics.vel.0 > -max_horizontal_speed) {
-                physics.acc.0 -= horizontal_acc;
+                physics.vel.0 -= horizontal_acc * TIME_BETWEEN_UPDATES;
             }
             if (control.horizontal == HControl::Right) & (physics.vel.0 < max_horizontal_speed) {
-                physics.acc.0 += horizontal_acc;
+                physics.vel.0 += horizontal_acc * TIME_BETWEEN_UPDATES;
             }
+            player.flap_cooldown -= TIME_BETWEEN_UPDATES;
+            // TODO: idle, standing & dive animations
         }
     }
 
     fn update_physics(&mut self) {
-        const GRAVITY: f32 = 8.0;
+        const GRAVITY: f32 = 10.0;
         const TERMINAL_VELOCITY: f32 = 12.0;
+        const GROUND_FRICTION: f32 = 4.5;
         for (_, (pos, physics)) in self.query::<(&mut Pos, &mut Physics)>().iter() {
-            if physics.acc.1 > -TERMINAL_VELOCITY {
-                physics.acc.1 -= GRAVITY;
+            if physics.vel.1 > -TERMINAL_VELOCITY {
+                physics.vel.1 -= GRAVITY * TIME_BETWEEN_UPDATES;
             }
-            physics.vel += physics.acc * TIME_BETWEEN_UPDATES;
-            physics.acc = Vec2::zero();
+
             let bounds = physics.bounds.moved(pos.curr);
             let mut movement = physics.vel * TIME_BETWEEN_UPDATES;
-            for (_, (pos, collider)) in self.query::<(&Pos, &Collider)>().iter() {
-                movement = bounds.check_move_against(movement, collider.bounds.moved(pos.curr));
+            for (_, (collision_pos, collider)) in self.query::<(&Pos, &Collider)>().iter() {
+                let collision = collider.bounds.moved(collision_pos.curr);
+                if bounds.moved(movement).overlapps(collision) {
+                    if bounds.moved(Vec2(movement.0, 0.0)).overlapps(collision) {
+                        physics.vel.0 = 0.0;
+                        movement.0 = 0.0;
+                    }
+                    if bounds.moved(Vec2(0.0, movement.1)).overlapps(collision) {
+                        physics.vel.1 = 0.0;
+                        physics.vel.0 *= 1.0 - GROUND_FRICTION * TIME_BETWEEN_UPDATES;
+                        movement.1 = 0.0;
+                    }
+                }
             }
-            if movement.0.abs() < 0.002 {
-                physics.vel.0 = 0.0;
-            }
-            if movement.1.abs() < 0.002 {
-                physics.vel.1 = 0.0;
-            }
-            pos.curr += physics.vel * TIME_BETWEEN_UPDATES;
+            pos.curr += movement;
         }
     }
 
@@ -258,9 +277,14 @@ impl World {
         }
     }
 
+    fn update_camera(&mut self) {
+        let player_pos = self.entities.get::<Pos>(self.player).unwrap();
+        self.camera.pos += (player_pos.curr-self.camera.pos) * TIME_BETWEEN_UPDATES;
+    }
+
     fn render(&self, renderer: &mut Renderer, lerp: f32) {
         for (_, (pos, sprite)) in self.query::<(&Pos, &Sprite)>().iter() {
-            let pos = pos.prev_interpol.lerp(pos.curr, lerp);
+            let pos = pos.prev_interpol.lerp(pos.curr, lerp) + sprite.offset;
             let index_base = (sprite.timer / sprite.frame_duration) as usize;
             let tex = &sprite.tex[
                 if sprite.repeat {
@@ -269,7 +293,7 @@ impl World {
                     index_base.min(sprite.tex.len()-1)
                 }
             ];
-            renderer.draw(pos, sprite.tex_anchor, tex, sprite.layer)
+            renderer.draw(&self.camera, pos, sprite.tex_anchor, tex, sprite.layer)
         }
         renderer.render()
     }

@@ -7,7 +7,7 @@ impl Vec2 {
     }
 
     pub fn len(self) -> f32 {
-        (self.0*self.0 + self.1+self.1).sqrt()
+        (self.0*self.0 + self.1*self.1).sqrt()
     }
 
     pub fn dist(self, other: Vec2) -> f32 {
@@ -133,32 +133,69 @@ impl Bounds {
         (self.min.1 < other.max.1) & (self.max.1 > other.min.1)
     }
 
+    /*
     pub fn check_move_against(self, movement: Vec2, obstacle: Bounds) -> Vec2 {
-        let eps = 0.001;
-        let move_x = if movement.0 > eps {
-            let distance = (obstacle.min.0 - self.max.0 - eps).max(movement.0).max(0.0);
+        let eps = 0.0005;
+        let move_x = if (movement.0 > eps) & (self.max.0 < obstacle.min.0) {
+            let distance = (obstacle.min.0 - self.max.0 - eps).min(movement.0).max(0.0);
             Vec2(distance, movement.1 * distance/movement.0)
-        } else if movement.0 < -eps {
-            let distance = (self.min.0 - obstacle.max.0 - eps).max(-movement.1).max(0.0);
+        } else if (movement.0 < -eps) & (self.min.0 > obstacle.max.1) {
+            let distance = (self.min.0 - obstacle.max.0 - eps).min(-movement.1).max(0.0);
             Vec2(-distance, movement.1 * distance/movement.0)
         } else {
             movement
         };
-        let move_y = if movement.1 > eps {
+        let move_y = if (movement.1 > eps) & (self.max.1 < obstacle.min.1) {
             let distance = (obstacle.min.1 - self.max.1 - eps).min(movement.1).max(0.0);
-            Vec2(distance, movement.0 * distance/movement.1)
-        } else if movement.1 < -eps {
-            let distance = (self.min.1 - obstacle.max.1 - eps).min(-movement.0).max(0.0);
-            Vec2(-distance, movement.0 * distance/movement.1)
+            //println!("movement: {}, self.max.1: {}, obstacle.min.1: {} -> min: {} -> distance: {}",
+            //    movement.1, self.max.1, obstacle.min.1, (obstacle.min.1 - self.max.1 - eps).min(movement.1), distance);
+            Vec2(movement.0 * distance/movement.1, distance)
+        } else if (movement.1 < -eps) & (self.min.1 > obstacle.max.1) {
+            let distance = (self.min.1 - obstacle.max.1 - eps).min(-movement.1).max(0.0);
+            //println!("diff: {:?} --> {:?}:   {:?};   max: {:?}, distance: {:?}",
+            //    self.min.1 - obstacle.max.1, self.min.1 > obstacle.max.1, movement.1, (self.min.1 - obstacle.max.1 - eps).min(-movement.1), distance);
+            Vec2(movement.0 * distance/movement.1, -distance)
         } else {
             movement
         };
-        println!("Bounds: {:?}, attempt: {:?}, obstacle: {:?}  --> move_x: {:?}, move_y: {:?}",
-            self, movement, obstacle, move_x, move_y);
-        if move_x.len() < move_y.len() {
-            move_x
+        /*if (move_x.len() < movement.len() - eps) | (move_y.len() < movement.len() - eps) {
+            println!("Collision: {:?}", self.center());
+        }*/
+        //println!("Bounds: {:?}, attempt: {:?}, obstacle: {:?}  --> move_x: {:?}, move_y: {:?}",
+        //    self, movement, obstacle, move_x, move_y);
+        if move_y.len() < move_x.len() - eps {
+            let bounds = self.moved(move_y);
+            if (bounds.min.0 <= obstacle.max.0) & (obstacle.min.0 <= bounds.max.0) {
+                println!("Collision y 1");
+                move_y
+            } else {
+                // No collision if moved by move_y
+                let bounds = self.moved(move_x);
+                if (bounds.min.1 <= obstacle.max.1) & (obstacle.min.1 <= bounds.max.1) {
+                    println!("Collision x 1");
+                    move_x
+                } else {
+                    movement
+                }
+            }
+        } else if move_x.len() < move_y.len() - eps {
+            let bounds = self.moved(move_x);
+            if (bounds.min.1 <= obstacle.max.1) & (obstacle.min.1 <= bounds.max.1) {
+                println!("Collision x 2");
+                move_x
+            } else {
+                // No collision if moved by move_x
+                let bounds = self.moved(move_y);
+                if (bounds.min.0 <= obstacle.max.0) & (obstacle.min.0 <= bounds.max.0) {
+                    println!("Collision y 2");
+                    move_y
+                } else {
+                    movement
+                }
+            }
         } else {
-            move_y
+            movement
         }
     }
+    */
 }

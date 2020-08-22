@@ -110,6 +110,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "cary"
+version = "0.0.1"
+dependencies = [
+ "bytemuck",
+ "console_error_panic_hook",
+ "futures",
+ "guillotiere",
+ "hecs",
+ "image",
+ "js-sys",
+ "shaderc",
+ "strum",
+ "strum_macros",
+ "walkdir",
+ "wasm-bindgen",
+ "web-sys",
+ "wgpu",
+ "winit",
+]
+
+[[package]]
 name = "cc"
 version = "1.0.58"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1249,27 +1270,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "04f5f085b5d71e2188cb8271e5da0161ad52c3f227a661a3c135fdf28e258b12"
 dependencies = [
  "unicode-xid 0.2.1",
-]
-
-[[package]]
-name = "pyrobat"
-version = "0.0.1"
-dependencies = [
- "bytemuck",
- "console_error_panic_hook",
- "futures",
- "guillotiere",
- "hecs",
- "image",
- "js-sys",
- "shaderc",
- "strum",
- "strum_macros",
- "walkdir",
- "wasm-bindgen",
- "web-sys",
- "wgpu",
- "winit",
 ]
 
 [[package]]

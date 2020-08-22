@@ -70,9 +70,6 @@ pub struct Renderer {
     buffer: WebGlBuffer,
     light_instances: Vec<LightInstance>,
     sprite_instances: Vec<SpriteInstance>,
-
-    camera_pos: Vec2,
-    camera_size: f32
 }
 
 impl Renderer {
@@ -236,9 +233,6 @@ impl Renderer {
             buffer,
             light_instances: Vec::new(),
             sprite_instances: Vec::new(),
-
-            camera_pos: Vec2(0.0, 0.0),
-            camera_size: 7.0
         }
     }
 
@@ -312,15 +306,15 @@ impl Renderer {
         self.context.flush();
     }
 
-    pub fn draw(&mut self, pos: Vec2, anchor: TexAnchor, tex: &TexCoords, layer: Layer) {
+    pub fn draw(&mut self, camera: &crate::Camera, pos: Vec2, anchor: TexAnchor, tex: &TexCoords, layer: Layer) {
         let size_real = tex.size / textures::PIXELS_PER_TILE;
         let pos = Vec2(pos.0, pos.1 + match anchor {
             TexAnchor::Top    => -size_real.1/2.0,
             TexAnchor::Center => 0.0,
             TexAnchor::Bottom => size_real.1/2.0
         });
-        let resize = Vec2(self.canvas.height() as f32 / self.canvas.width() as f32, 1.0) / self.camera_size;
-        let screen_pos = (pos-self.camera_pos) * resize;
+        let resize = Vec2(self.canvas.height() as f32 / self.canvas.width() as f32, 1.0) / camera.size;
+        let screen_pos = (pos-camera.pos) * resize;
         let screen_size = size_real * resize;
         if (screen_pos.0 + screen_size.0/2.0 > -1.0) &
            (screen_pos.1 + screen_size.1/2.0 > -1.0) &

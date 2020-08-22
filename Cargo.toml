@@ -1,5 +1,5 @@
 [package]
-name = "pyrobat"
+name = "cary"
 authors = ["Vincent Junge <vincentjunge@posteo.net>"]
 edition = "2018"
 version = "0.0.1"

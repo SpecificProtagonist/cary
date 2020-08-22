@@ -32,7 +32,6 @@ pub struct Physics {
     /// Bounds relative to position
     pub bounds: Bounds,
     pub vel: Vec2,
-    pub acc: Vec2,
     pub mass: f32,
     pub gravity: bool
 }
@@ -123,26 +122,58 @@ impl Sprite {
             self.timer
         }
     }
+
+    pub fn finished(&self) -> bool {
+        if self.repeat {
+            false
+        } else {
+            self.timer >= self.frame_duration * self.tex.len() as f32
+        }
+    }
+}
+
+pub fn make_tile_background(x: i32, y: i32) -> (Pos, Sprite) {
+    (
+        Vec2(x as f32, y as f32).into(),
+        Sprite {
+            offset: Vec2(0.0, -1.0),
+            tex_anchor: TexAnchor::Bottom,
+            tex: crate::textures::TILE_FREE,
+            frame_duration: f32::INFINITY,
+            repeat: false,
+            timer: 0.0,
+            layer: Layer::Background
+        }
+    )
+}
+
+pub fn make_tile_solid(x: i32, y: i32) -> (Pos, Sprite, Collider) {
+    (
+        Vec2(x as f32, y as f32).into(),
+        Sprite::single(crate::textures::TILE_SOLID, TexAnchor::Bottom, Layer::ForegroundTile),
+        Collider {
+            bounds: Bounds::around(Vec2(0.0, 0.5), Vec2(1.0, 1.0))
+        }
+    )
 }
 
 pub struct Player {
-    
+    pub flap_cooldown: f32
 }
 
 pub fn make_player(pos: Vec2) -> (Player, Pos, Physics, Controllable, Killable, Sprite){
     const SIZE: f32 = 0.65;
     (
-        Player {},
+        Player { flap_cooldown: 0.0 },
         pos.into(),
         Physics {
             bounds: Bounds::around(Vec2::zero(), Vec2(SIZE, SIZE)),
             vel: Vec2::zero(),
-            acc: Vec2::zero(),
             mass: 0.25,
             gravity: true
         },
         Controllable::default(),
         Killable {},
-        Sprite::ani(crate::textures::PLAYER_FLY, TexAnchor::Center, Layer::Foreground, 0.08, true),
+        Sprite::ani(crate::textures::PLAYER_FLY, TexAnchor::Center, Layer::Foreground, 0.08, false),
     )
 }

@@ -18,6 +18,7 @@ pub struct Rgb(pub f32, pub f32, pub f32);
 
 #[derive(Copy, Clone, Debug)]
 pub enum Layer {
+    ForegroundTile = 5,
     ForegroundPlayer = 6,
     Foreground = 7,
     Background = 8,
