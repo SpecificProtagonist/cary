@@ -7,7 +7,7 @@ use winit::window::Window;
 use wgpu::*;
 use crate::textures::{self, TexCoords, TexAnchor};
 use crate::Vec2;
-use super::{Rgb, Layer};
+use super::Layer;
 
 
 // TODO: remove light stuffs
@@ -656,7 +656,7 @@ impl Renderer {
 
     pub fn set_transition(&mut self, camera: &crate::Camera, center: Vec2, distance: f32, victory: bool) {
         let aspect_ratio = self.swap_chain_desc.height as f32 / self.swap_chain_desc.width as f32;
-        let screen_pos = ((center-camera.pos) * aspect_ratio/camera.size + Vec2(1.0, 1.0)) / 2.0;
+        let screen_pos = ((center-camera.pos) * aspect_ratio/camera.size + Vec2(1.0, -1.0)) * Vec2(0.5, -0.5);
 
         let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {label: None});
 

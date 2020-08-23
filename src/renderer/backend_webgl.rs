@@ -13,7 +13,7 @@ use web_sys::{
 use image::GenericImageView;
 use crate::textures::{self, TexCoords, TexAnchor};
 use crate::Vec2;
-use super::{Rgb, Layer};
+use super::Layer;
 
 const ATTRIB_VERTEX: u32 = 0;
 const ATTRIB_POSITION: u32 = 1;
@@ -193,6 +193,19 @@ impl Renderer {
         self.sprite_instances.clear();
 
         self.context.flush();
+    }
+
+    pub fn set_transition(&mut self, camera: &crate::Camera, center: Vec2, distance: f32, victory: bool) {
+        let aspect_ratio = Vec2(self.canvas.height() as f32 / self.canvas.width() as f32, 1.0);
+        let screen_pos = ((center-camera.pos) * aspect_ratio/camera.size + Vec2(1.0, -1.0)) * Vec2(0.5, -0.5);
+        
+        self.context.use_program(Some(&self.program_world));
+        let transition_center = self.context.get_uniform_location(&self.program_world, "transition_center").unwrap();
+        self.context.uniform2f(Some(&transition_center), screen_pos.0, screen_pos.1);
+        let transition_distance = self.context.get_uniform_location(&self.program_world, "transition_distance").unwrap();
+        self.context.uniform1f(Some(&transition_distance), distance);
+        let transition_victory = self.context.get_uniform_location(&self.program_world, "transition_victory").unwrap();
+        self.context.uniform1f(Some(&transition_victory), if victory {1.0} else {0.0});
     }
 
     pub fn draw(&mut self, camera: &crate::Camera, pos: Vec2, anchor: TexAnchor, tex: &TexCoords, layer: Layer, mirror: bool) {

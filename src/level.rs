@@ -33,6 +33,9 @@ pub fn load() -> World {
             ' ' => {
                 background = true;
             },
+            'M' => {
+                world.entities.spawn(make_tile_movable(x, y));
+            },
             '^' => {
                 background = true;
                 world.entities.spawn(make_spikes(x, y));
@@ -47,7 +50,7 @@ pub fn load() -> World {
                 x = -1;
             },
             '\r' => (),
-            _ => panic!()
+            _ => panic!(format!("Unknown entity: {}", c))
         }
         if background {
             world.entities.spawn(make_tile_background(x, y));

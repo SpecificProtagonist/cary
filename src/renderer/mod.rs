@@ -12,9 +12,6 @@ mod backend_wgpu;
 pub use backend_wgpu::Renderer;
 
 
-// TODO: HSV
-#[derive(Copy, Clone, Debug)]
-pub struct Rgb(pub f32, pub f32, pub f32);
 
 #[derive(Copy, Clone, Debug)]
 pub enum Layer {

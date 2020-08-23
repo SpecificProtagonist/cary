@@ -36,7 +36,7 @@ void main() {
     vec4 transition_color = transition_victory > 0.5 ? vec4(0, 1, 1, 1) : vec4(1, 0.5, 0.5, 1);
     if(color.a < 0.5) {
         discard;
-    } else if(transition_distance > distance(gl_FragCoord.xy/window_size, transition_center)) {
+    } else if(color.rgb != vec3(0,0,0) && transition_distance > distance(gl_FragCoord.xy/window_size, transition_center)) {
         out_color = transition_color;
     } else {
         out_color = color;

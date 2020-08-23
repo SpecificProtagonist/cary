@@ -14,7 +14,7 @@ use wasm_bindgen::prelude::wasm_bindgen;
 use hecs::Entity;
 use math::*;
 use components::*;
-use renderer::{Renderer, Rgb, Layer};
+use renderer::{Renderer, Layer};
 
 
 
@@ -359,7 +359,7 @@ impl World {
             let bounds = physics.bounds + self.entities.get::<Pos>(entity).unwrap().curr;
             let children = self.entities.get::<Children>(entity).ok();
             let entities = &self.entities;
-            for (_, (collision_pos, collider)) in self.query::<(&Pos, &Collider)>().iter() {
+            for (collision_entity, (collision_pos, collider)) in self.query::<(&Pos, &Collider)>().iter() {
                 let collision = collider.bounds + collision_pos.curr;
                 for bounds in Some(bounds).into_iter().chain(children.iter().flat_map(
                     |children| children.0.iter().filter_map(
@@ -367,17 +367,19 @@ impl World {
                                             + entities.get::<Pos>(*child).ok()?.curr)
                     ))) 
                 {
-                    if (bounds + movement).overlapps(collision) {
-                        if (bounds + Vec2(movement.0, 0.0)).overlapps(collision) {
-                            physics.collided.0 = if movement.0 > 0.0 { Horizontal::Right } else { Horizontal::Left };
-                            physics.vel.0 = 0.0;
-                            movement.0 = 0.0;
-                        }
-                        if (bounds + Vec2(0.0, movement.1)).overlapps(collision) {
-                            physics.collided.1 = if movement.1 > 0.0 { Vertical::Up } else { Vertical::Down };
-                            physics.vel.1 = 0.0;
-                            physics.vel.0 *= 1.0 - GROUND_FRICTION * TIME_BETWEEN_UPDATES;
-                            movement.1 = 0.0;
+                    if self.entities.get::<Carryable>(collision_entity).map_or(true, |carryable|!carryable.carried) {
+                        if !bounds.overlapps(collision) & (bounds + movement).overlapps(collision) {
+                            if (bounds + Vec2(movement.0, 0.0)).overlapps(collision) {
+                                physics.collided.0 = if movement.0 > 0.0 { Horizontal::Right } else { Horizontal::Left };
+                                physics.vel.0 = 0.0;
+                                movement.0 = 0.0;
+                            }
+                            if (bounds + Vec2(0.0, movement.1)).overlapps(collision) {
+                                physics.collided.1 = if movement.1 > 0.0 { Vertical::Up } else { Vertical::Down };
+                                physics.vel.1 = 0.0;
+                                physics.vel.0 *= 1.0 - GROUND_FRICTION * TIME_BETWEEN_UPDATES;
+                                movement.1 = 0.0;
+                            }
                         }
                     }
                 }

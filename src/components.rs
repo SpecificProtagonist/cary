@@ -177,6 +177,29 @@ pub fn make_tile_solid(x: i32, y: i32) -> (Pos, Sprite, Collider) {
     )
 }
 
+pub fn make_tile_movable(x: i32, y: i32) -> (Pos, Sprite, Collider, Physics, Carryable) {
+    let bounds = Bounds::around(Vec2(0.0, 0.5), Vec2(1.0, 1.0));
+    (
+        Vec2(x as f32, y as f32).into(),
+        Sprite::single(TILE_MOVEABLE, TexAnchor::Bottom, Layer::ForegroundTile),
+        Collider {
+            bounds
+        },
+        Physics {
+            bounds,
+            vel: Vec2::zero(),
+            mass: 1.0,
+            gravity: true,
+            collided: (Horizontal::None, Vertical::None)
+        },
+        Carryable {
+            detect_bounds: Bounds::around(Vec2(0.0, 1.4), Vec2(1.2, 1.0)),
+            carry_offset: Vec2(0.0, -1.33),
+            carried: false
+        },
+    )
+}
+
 pub fn make_spikes(x: i32, y: i32) -> (Pos, Hazzard, Sprite) {
     (
         Vec2(x as f32, y as f32).into(),
@@ -203,8 +226,7 @@ pub struct Player {
 }
 
 pub fn make_player(pos: Vec2) -> (Player, Pos, Physics, Controllable, Children, Killable, Sprite){
-    const SIZE: f32 = 0.65;
-    let bounds = Bounds::around(Vec2::zero(), Vec2(SIZE, SIZE));
+    let bounds = Bounds::around(Vec2::zero(), Vec2(0.65, 0.65));
     (
         Player { 
             flap_cooldown: 0.0,
