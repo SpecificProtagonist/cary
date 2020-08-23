@@ -12,42 +12,14 @@ use image::{DynamicImage, GenericImage, GenericImageView};
 /// Builds the resources to be embedded. 
 /// There won't be any error handling here because this will never be executed by the user
 fn main() {
-    compile_shaders();
-    texture_atlas();
-}
-
-fn compile_shaders() {
-    let out_dir = Path::new(&env::var("OUT_DIR").unwrap()).join("shaders");
-    std::fs::create_dir_all(&out_dir).unwrap();
-
-    let mut compiler = Compiler::new().unwrap();
-
-    let mut compile_shader = |name, shader_kind| {
-        let src_file = format!("src/renderer/shaders/{}.glsl", name);
-        println!("cargo:rerun-if-changed={}", src_file);
-        let vertex_spirv = compiler.compile_into_spirv(
-            &std::fs::read_to_string(src_file).unwrap(), 
-            shader_kind, name, "main", None
-        ).unwrap();
-        File::create(out_dir.join(format!("{}.spv", name))).unwrap()
-            .write_all(vertex_spirv.as_binary_u8()).unwrap();
-    };
-
-    compile_shader("fragment_light", ShaderKind::Fragment);
-    compile_shader("vertex_light", ShaderKind::Vertex);
-    compile_shader("fragment_world", ShaderKind::Fragment);
-    compile_shader("vertex_world", ShaderKind::Vertex);
-}
-
-fn texture_atlas() {
     // TODO: normal maps
-
-    // Cargo doesn't support rerun on directory content change, so we have to manually trigger this
-    println!("cargo:rerun-if-changed=textures/touch-to-rebuild-texture-atlas");
 
     let out_dir = Path::new(&env::var("OUT_DIR").unwrap()).to_owned();
    
-    let mut size = Size::new(1024, 1024);
+    /*** TEXTURE ATLAS ***/
+    // Cargo doesn't support rerun on directory content change, so we have to manually trigger this
+    println!("cargo:rerun-if-changed=textures/touch-to-rebuild-texture-atlas");
+    let mut size = Size::new(512, 512);
     let mut atlas_alloc = AtlasAllocator::new(size);
     let mut map: HashMap<String, Vec<_>> = HashMap::new();
 
@@ -159,4 +131,50 @@ fn texture_atlas() {
         }
         writeln!(out_file, "];").unwrap();
     }
+
+    // Required for shaders
+    let cyan = map.get("CYAN").as_ref().unwrap()[0].as_ref().unwrap().0.rectangle;
+    let red = map.get("RED").as_ref().unwrap()[0].as_ref().unwrap().0.rectangle;
+    let cyan_coords = (cyan.center().x as f32 / size.width as f32, cyan.center().y as f32 / size.height as f32);
+    let red_coords = (red.center().x as f32 / size.width as f32, red.center().y as f32 / size.height as f32);
+
+
+
+    /*** SHADERS ***/
+    let out_dir = Path::new(&env::var("OUT_DIR").unwrap()).join("shaders");
+    std::fs::create_dir_all(&out_dir).unwrap();
+
+    let mut compiler = Compiler::new().unwrap();
+
+    let mut compile_shader = |name, shader_kind| {
+        let src_file = format!("src/renderer/shaders/{}.glsl", name);
+        println!("cargo:rerun-if-changed={}", src_file);
+        let src_text = std::fs::read_to_string(src_file).unwrap()
+            .replace("$cyan_coords", &format!("vec2({},{})", cyan_coords.0, cyan_coords.1))
+            .replace("$red_coords", &format!("vec2({},{})", red_coords.0, red_coords.1));
+        let vertex_spirv = compiler.compile_into_spirv(
+            &src_text,
+            shader_kind, name, "main", None
+        ).unwrap();
+        File::create(out_dir.join(format!("{}.spv", name))).unwrap()
+            .write_all(vertex_spirv.as_binary_u8()).unwrap();
+    };
+
+    compile_shader("fragment_light", ShaderKind::Fragment);
+    compile_shader("vertex_light", ShaderKind::Vertex);
+    compile_shader("fragment_world", ShaderKind::Fragment);
+    compile_shader("vertex_world", ShaderKind::Vertex);
+
+   
+    // WebGL
+    println!("cargo:rerun-if-changed=src/renderer/shaders_webgl/vertex_world.glsl");
+    std::fs::copy("src/renderer/shaders_webgl/vertex_world.glsl",
+                  out_dir.join(format!("vertex_world.glsl"))).unwrap();
+    println!("cargo:rerun-if-changed=src/renderer/shaders_webgl/fragment_world.glsl");
+    File::create(out_dir.join(format!("fragment_world.glsl"))).unwrap()
+        .write_all(&std::fs::read_to_string("src/renderer/shaders_webgl/fragment_world.glsl").unwrap()
+            .replace("$cyan_coords", &format!("vec2({},{})", cyan_coords.0, cyan_coords.1))
+            .replace("$red_coords", &format!("vec2({},{})", red_coords.0, red_coords.1)).as_bytes())
+        .unwrap();
+    
 }

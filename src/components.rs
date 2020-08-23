@@ -104,7 +104,8 @@ pub struct Sprite {
     pub mirror: bool,
     pub frame_duration: f32,
     pub repeat: bool,
-    pub timer: f32
+    pub timer: f32,
+    pub running: bool
 }
 
 impl Sprite {
@@ -117,7 +118,8 @@ impl Sprite {
             frame_duration: f32::INFINITY,
             repeat: false,
             timer: 0.0,
-            layer
+            layer,
+            running: false
         }
     }
 
@@ -130,7 +132,8 @@ impl Sprite {
             frame_duration,
             repeat,
             timer: 0.0,
-            layer
+            layer,
+            running: true
         }
     }
 
@@ -162,7 +165,8 @@ pub fn make_tile_background(x: i32, y: i32) -> (Pos, Sprite) {
             frame_duration: f32::INFINITY,
             repeat: false,
             timer: 0.0,
-            layer: Layer::Background
+            layer: Layer::Background,
+            running: false
         }
     )
 }
@@ -206,7 +210,7 @@ pub fn make_spikes(x: i32, y: i32) -> (Pos, Hazzard, Sprite) {
         Hazzard {
             bounds: Bounds::around(Vec2(0.0, 0.4), Vec2(1.0, 0.8))
         },
-        Sprite::single(SPIKES, TexAnchor::Bottom, Layer::Foreground),
+        Sprite::ani(SPIKES, TexAnchor::Bottom, Layer::Foreground, 0.27, true),
     )
 }
 
@@ -215,10 +219,10 @@ pub fn make_divider(x: i32, y: i32, vertical: bool) -> (Pos, Hazzard, Sprite) {
         Vec2(x as f32, y as f32).into(),
         Hazzard {
             bounds: Bounds::around(Vec2(0.0, 0.5), 
-            if vertical {Vec2(0.375, 1.0)} else { Vec2(1.0, 0.375) })
+            if vertical {Vec2(0.28, 1.0)} else { Vec2(1.0, 0.375) })
         },
-        Sprite::single(if vertical {DIVIDER_V} else {DIVIDER_H}, 
-            TexAnchor::Bottom, Layer::Foreground),
+        Sprite::ani(if vertical {DIVIDER_V} else {DIVIDER_H}, 
+            TexAnchor::Bottom, Layer::Foreground, 1.0/25.0, true),
     )
 }
 
@@ -234,7 +238,8 @@ pub fn make_trap_ceiling(x: i32, y: i32) -> (Pos, Hazzard, Sprite) {
 
 pub struct Player {
     pub flap_cooldown: f32,
-    pub carrying: Option<Entity>
+    pub carrying: Option<Entity>,
+    pub stamina: f32 // max: 1.0
 }
 
 pub fn make_player(pos: Vec2) -> (Player, Pos, Physics, Controllable, Children, Killable, Sprite){
@@ -242,7 +247,8 @@ pub fn make_player(pos: Vec2) -> (Player, Pos, Physics, Controllable, Children, 
     (
         Player { 
             flap_cooldown: 0.0,
-            carrying: None
+            carrying: None,
+            stamina: 1.0
         },
         pos.into(),
         Physics {

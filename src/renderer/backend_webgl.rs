@@ -76,12 +76,12 @@ impl Renderer {
             &compile_shader(
                 &context,
                 WebGl2RenderingContext::VERTEX_SHADER,
-                include_str!("shaders_webgl/vertex_world.glsl")
+                include_str!(concat!(env!("OUT_DIR"), "/shaders/vertex_world.glsl"))
             ), 
             &compile_shader(
                 &context,
                 WebGl2RenderingContext::FRAGMENT_SHADER,
-                include_str!("shaders_webgl/fragment_world.glsl")
+                include_str!(concat!(env!("OUT_DIR"), "/shaders/fragment_world.glsl"))
             )
         );
 

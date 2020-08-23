@@ -319,7 +319,15 @@ impl World {
         player.flap_cooldown -= TIME_BETWEEN_UPDATES;
         // TODO: standing sprite
 
-        if control.pick_up {
+        let stamina_regen_rate = 0.3;
+        let stamina_drain_rate = 0.18;
+        if player.carrying.is_some() {
+            player.stamina = (player.stamina - stamina_drain_rate * TIME_BETWEEN_UPDATES).max(0.0)
+        } else {
+            player.stamina = (player.stamina + stamina_regen_rate * TIME_BETWEEN_UPDATES).min(1.0)
+        }
+
+        if control.pick_up | (player.stamina == 0.0) {
             if let Some(carried) = player.carrying {
                 player.carrying = None;
                 children.0.retain(|child| *child != carried);
@@ -434,6 +442,10 @@ impl World {
                                 physics.vel.0 *= 1.0 - GROUND_FRICTION * TIME_BETWEEN_UPDATES;
                                 movement.1 = 0.0;
                             }
+                            if (movement.0 != 0.0) & (movement.1 != 0.0) {
+                                // Corner hit head on
+                                movement = Vec2::zero()
+                            }
                         }
                     }
                 }
@@ -483,7 +495,9 @@ impl World {
         // We need to update this instead of just calculating the time elapsed
         // in render() because the game may be paused (or time-dilated for special effects)
         for (_, sprite) in self.query::<&mut Sprite>().iter() {
-            sprite.timer += TIME_BETWEEN_UPDATES
+            if sprite.running {
+                sprite.timer += TIME_BETWEEN_UPDATES
+            }
         }
     }
 
@@ -518,6 +532,7 @@ impl World {
     }
 
     fn render(&self, renderer: &mut Renderer, lerp: f32) {
+        // Sprites
         for (_, (pos, sprite)) in self.query::<(&Pos, &Sprite)>().iter() {
             let pos = pos.prev_interpol.lerp(pos.curr, lerp) + sprite.offset;
             let index_base = (sprite.timer / sprite.frame_duration) as usize;
@@ -531,6 +546,7 @@ impl World {
             renderer.draw(&self.camera, pos, sprite.tex_anchor, tex, sprite.layer, sprite.mirror)
         }
 
+        // Pickup hint
         if let Some(carryable) = self.find_pickupable() {
             let player_pos = self.entities.get::<Pos>(self.player).unwrap();
             let carryable = self.entities.get::<Carryable>(carryable).unwrap();
@@ -540,6 +556,16 @@ impl World {
             }
         }
 
+        // Stamina bar
+        let player_pos = self.entities.get::<Pos>(self.player).unwrap().curr;
+        let player = self.entities.get::<Player>(self.player).unwrap();
+        if match self.state { WorldState::Running => player.stamina < 1.0, _ => false } {
+            // TODO: independant of camera.size
+            renderer.draw(&self.camera, player_pos + Vec2(0.0, 0.7), textures::TexAnchor::Bottom,
+                &textures::STAMINA_BAR[(player.stamina * textures::STAMINA_BAR.len() as f32) as usize], Layer::UI, false);
+        }
+
+        // Transition
         let transition_speed = 1.3;
         match self.state {
             WorldState::Running => {
@@ -575,7 +601,7 @@ fn render_show_controls(renderer: &mut Renderer) {
     for x in -30..31 {
         for y in -10..10 {
             renderer.draw(&UI_CAMERA, Vec2(x as f32, y as f32), textures::TexAnchor::Center, 
-                &textures::BLUE[0], Layer::ForegroundTile, false);
+                &textures::CYAN[0], Layer::ForegroundTile, false);
         }
     }
     renderer.draw(&UI_CAMERA, Vec2::zero(), textures::TexAnchor::Center, 
@@ -587,7 +613,7 @@ fn render_victory(renderer: &mut Renderer) {
     for x in -30..31 {
         for y in -10..10 {
             renderer.draw(&UI_CAMERA, Vec2(x as f32, y as f32), textures::TexAnchor::Center, 
-                &textures::BLUE[0], Layer::ForegroundTile, false);
+                &textures::CYAN[0], Layer::ForegroundTile, false);
         }
     }
     renderer.draw(&UI_CAMERA, Vec2::zero(), textures::TexAnchor::Center, 
