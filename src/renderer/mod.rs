@@ -15,6 +15,7 @@ pub use backend_wgpu::Renderer;
 
 #[derive(Copy, Clone, Debug)]
 pub enum Layer {
+    UI = 2,
     ForegroundTile = 3,
     ForegroundPlayer = 4,
     ForegroundPickupHint = 5,

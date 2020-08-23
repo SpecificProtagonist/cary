@@ -196,8 +196,8 @@ impl Renderer {
     }
 
     pub fn set_transition(&mut self, camera: &crate::Camera, center: Vec2, distance: f32, victory: bool) {
-        let aspect_ratio = Vec2(self.canvas.height() as f32 / self.canvas.width() as f32, 1.0);
-        let screen_pos = ((center-camera.pos) * aspect_ratio/camera.size + Vec2(1.0, -1.0)) * Vec2(0.5, -0.5);
+        let aspect_ratio = self.canvas.height() as f32 / self.canvas.width() as f32;
+        let screen_pos = ((center-camera.pos) * aspect_ratio/camera.size + Vec2(1.0, 1.0)) * Vec2(0.5, 0.5);
         
         self.context.use_program(Some(&self.program_world));
         let transition_center = self.context.get_uniform_location(&self.program_world, "transition_center").unwrap();

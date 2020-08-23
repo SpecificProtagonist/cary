@@ -21,7 +21,17 @@ use renderer::{Renderer, Layer};
 const TIME_BETWEEN_UPDATES: f32 = 1.0 / 25.0;
 const MIN_TIME_BETWEEN_FRAMES: f32 = 1.0 / 60.0;
 
+const GAME_END_WAIT_TIME: f32 = 1.5;
+const UI_CAMERA: Camera = Camera {
+    pos: Vec2(0.0, 0.0),
+    size: 7.0
+};
 
+enum GameState {
+    ShowControls,
+    WorldLoaded(World),
+    Victory
+}
 
 #[cfg(target_arch="wasm32")]
 #[wasm_bindgen(start)]
@@ -31,8 +41,6 @@ pub fn wasm_main() {
 }
 
 pub fn main() {
-    
-    let mut world = level::load();
 
     let event_loop = EventLoop::new();
     // There will be only one window -> ignore window ids in events
@@ -48,6 +56,9 @@ pub fn main() {
     }
     let mut renderer = Renderer::create(&window);
 
+    let mut level = 0;
+    let mut game_state = GameState::ShowControls;
+
     // std::time's not available in wasm?
     // Also, maybe explicit requestAnimationFrame would be usefull on the web
     let mut last_update = Time::now();
@@ -62,17 +73,54 @@ pub fn main() {
             Event::WindowEvent { event: WindowEvent::CloseRequested, ..}
                 => *control_flow = ControlFlow::Exit,
             Event::WindowEvent { event: WindowEvent::KeyboardInput { input, .. }, .. }
-                => world.input(input),
+                => {
+                match &mut game_state {
+                    GameState::WorldLoaded(world) => {
+                        if (Some(VirtualKeyCode::J) == input.virtual_keycode) 
+                        & (input.state == winit::event::ElementState::Pressed)
+                        {
+                            match world.state {
+                                WorldState::Victory(_, time) if time > GAME_END_WAIT_TIME => {
+                                    level += 1;
+                                    if level < level::level_count() {
+                                        *world = level::load(level)
+                                    } else {
+                                        game_state = GameState::Victory
+                                    }
+                                },
+                                WorldState::Loss(_, time) if time > GAME_END_WAIT_TIME
+                                => *world = level::load(level),
+                                _ => world.input(input)
+                            }
+                        } else {
+                            world.input(input)
+                        }
+                    },
+                    GameState::ShowControls => {
+                        if input.virtual_keycode.is_some() & (input.state == winit::event::ElementState::Pressed) {
+                            game_state = GameState::WorldLoaded(level::load(level))
+                        }
+                    },
+                    GameState::Victory => ()
+                }
+            },
             Event::MainEventsCleared 
                 => {
                     if last_update.elapsed() >= TIME_BETWEEN_UPDATES {
                         last_update.add(TIME_BETWEEN_UPDATES);
-                        world.update();
+                        if let GameState::WorldLoaded(world) = &mut game_state {
+                            world.update();
+                        }
                     }
                     let since_last_frame = last_frame.elapsed();
                     if since_last_frame >= MIN_TIME_BETWEEN_FRAMES {
                         last_frame.add(MIN_TIME_BETWEEN_FRAMES);
-                        world.render(&mut renderer, since_last_frame / TIME_BETWEEN_UPDATES);
+                        match &game_state {
+                            GameState::WorldLoaded(world) 
+                                => world.render(&mut renderer, since_last_frame / TIME_BETWEEN_UPDATES),
+                            GameState::ShowControls => render_show_controls(&mut renderer),
+                            GameState::Victory => render_victory(&mut renderer)
+                        }
                     }
                 },
             _ => {}
@@ -314,8 +362,9 @@ impl World {
             let pos = self.entities.get_mut::<Pos>(self.cary).unwrap();
             let mut physics = self.entities.get_mut::<Physics>(self.cary).unwrap();
 
-            let walk_speed = 2.0;
+            let walk_speed = 1.8;
             let jump_speed = 6.7;
+            let jump_speed_low = 5.0;
             // Allow movement during junp
             if (physics.collided.1 == Vertical::Down) | (physics.vel.1 > 0.0) {
                 physics.vel.0 = if cary.walk_right { walk_speed} else { -walk_speed };
@@ -325,7 +374,12 @@ impl World {
                 |((physics.collided.0 == Horizontal::Right) & cary.walk_right))
             {
                 // Decide whether to jump or to turn around
-                if self.is_free(&(physics.bounds + pos.curr + Vec2(if cary.walk_right {1.0} else {-1.0}, 2.1))) {
+                let check_offset_x = if cary.walk_right {0.2} else {-0.2};
+                if self.is_free(&(physics.bounds + pos.curr + Vec2(check_offset_x, 0.1))) {
+                    physics.vel.1 = 1.5;
+                } else if self.is_free(&(physics.bounds + pos.curr + Vec2(check_offset_x, 1.1))) {
+                    physics.vel.1 = jump_speed_low;
+                } else if self.is_free(&(physics.bounds + pos.curr + Vec2(check_offset_x, 2.1))) {
                     physics.vel.1 = jump_speed;
                 } else {
                     let mut sprite = self.entities.get_mut::<Sprite>(self.cary).unwrap();
@@ -434,8 +488,33 @@ impl World {
     }
 
     fn update_camera(&mut self) {
-        let player_pos = self.entities.get::<Pos>(self.player).unwrap();
-        self.camera.pos += (player_pos.curr-self.camera.pos) * TIME_BETWEEN_UPDATES;
+        let player_pos = self.entities.get::<Pos>(self.player).unwrap().curr;
+        let cary_pos = self.entities.get::<Pos>(self.cary).unwrap().curr;
+
+        let max_x_diff = 1.55 * self.camera.size; // todo: make dependant on aspect ratio
+        let x_diff = (cary_pos.0 - player_pos.0).max(-max_x_diff).min(max_x_diff);
+        let max_y_diff = 1.25 * self.camera.size;
+        let y_diff = (cary_pos.1 - player_pos.1).max(-max_y_diff).min(max_y_diff);
+
+        let target = Vec2(
+            player_pos.0 + 0.5 * x_diff,
+            player_pos.1 + 0.5 * y_diff
+        );
+
+        self.camera.pos += (target-self.camera.pos) * 1.5 * TIME_BETWEEN_UPDATES;
+
+        fn zoom_dist(distance: Vec2) -> f32 {
+            (distance.0.abs() / 3.0 /* arbitrarily chosen */).max(distance.1.abs())
+        }
+        let size_min: f32 = 7.0;
+        let size_max: f32 = 12.0;
+        let grow_target = zoom_dist(cary_pos - target) + 0.8;
+        let shrink_target = zoom_dist(cary_pos - target) + 4.0;
+        if grow_target > self.camera.size {
+            self.camera.size = size_max.min(self.camera.size + (grow_target-self.camera.size) * 0.6 * TIME_BETWEEN_UPDATES);
+        } else if shrink_target < self.camera.size {
+            self.camera.size = size_min.max(self.camera.size + (shrink_target-self.camera.size) * 0.6 * TIME_BETWEEN_UPDATES);
+        }
     }
 
     fn render(&self, renderer: &mut Renderer, lerp: f32) {
@@ -463,12 +542,22 @@ impl World {
 
         let transition_speed = 1.3;
         match self.state {
-            WorldState::Running => {},
+            WorldState::Running => {
+                renderer.set_transition(&self.camera, Vec2::zero(), 0.0, false);
+            },
             WorldState::Loss(center, time) => {
                 renderer.set_transition(&self.camera, center, transition_speed * time, false);
+                if time > GAME_END_WAIT_TIME {
+                    renderer.draw(&UI_CAMERA, Vec2::zero(), textures::TexAnchor::Center, 
+                        &textures::TEXT_RETRY[0], Layer::UI, false);
+                }
             },
             WorldState::Victory(center, time) => {
                 renderer.set_transition(&self.camera, center, transition_speed * time, true);
+                if time > GAME_END_WAIT_TIME {
+                    renderer.draw(&UI_CAMERA, Vec2::zero(), textures::TexAnchor::Center, 
+                        &textures::TEXT_NEXT[0], Layer::UI, false);
+                }
             }
         }
 
@@ -480,4 +569,28 @@ enum WorldState {
     Running,
     Loss(Vec2, f32),
     Victory(Vec2, f32)
+}
+
+fn render_show_controls(renderer: &mut Renderer) {
+    for x in -30..31 {
+        for y in -10..10 {
+            renderer.draw(&UI_CAMERA, Vec2(x as f32, y as f32), textures::TexAnchor::Center, 
+                &textures::BLUE[0], Layer::ForegroundTile, false);
+        }
+    }
+    renderer.draw(&UI_CAMERA, Vec2::zero(), textures::TexAnchor::Center, 
+        &textures::CONTROLS[0], Layer::UI, false);
+    renderer.render();
+}
+
+fn render_victory(renderer: &mut Renderer) {
+    for x in -30..31 {
+        for y in -10..10 {
+            renderer.draw(&UI_CAMERA, Vec2(x as f32, y as f32), textures::TexAnchor::Center, 
+                &textures::BLUE[0], Layer::ForegroundTile, false);
+        }
+    }
+    renderer.draw(&UI_CAMERA, Vec2::zero(), textures::TexAnchor::Center, 
+        &textures::VICTORY[0], Layer::UI, false);
+    renderer.render();
 }

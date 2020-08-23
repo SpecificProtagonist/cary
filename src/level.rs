@@ -2,8 +2,19 @@ use crate::World;
 use crate::math::*;
 use crate::components::*;
 
-pub fn load() -> World {
-    let level_string = include_str!("../levels/test");
+const LEVELS: &[&str] = &[
+    include_str!("../levels/level_0"),
+    include_str!("../levels/level_1"),
+    include_str!("../levels/level_2"),
+    include_str!("../levels/level_3"),
+];
+
+pub fn level_count() -> usize {
+    LEVELS.len()
+}
+
+pub fn load(level: usize) -> World {
+    let level_string = LEVELS[level];
 
     let mut world = World::new();
    
@@ -11,45 +22,50 @@ pub fn load() -> World {
     let mut y = 0;
     // TODO: spawn_batched() would be faster
     for c in level_string.chars() {
-        let mut background = false;
+        let mut background = true;
         match c {
             'P' => {
-                background = true;
                 let mut player_pos = world.entities.get_mut::<Pos>(world.player).unwrap();
                 player_pos.curr = Vec2(x as f32, y as f32);
             },
             'C' => {
-                background = true;
                 let mut cary_pos = world.entities.get_mut::<Pos>(world.cary).unwrap();
                 cary_pos.curr = Vec2(x as f32, y as f32);
             },
             'E' => {
-                background = true;
                 world.entities.spawn(make_exit(x, y));
             },
             '#' => {
+                background = false;
                 world.entities.spawn(make_tile_solid(x, y));
             },
-            ' ' => {
-                background = true;
-            },
+            ' ' => (),
             'M' => {
                 world.entities.spawn(make_tile_movable(x, y));
             },
             '^' => {
-                background = true;
                 world.entities.spawn(make_spikes(x, y));
             },
+            '-' => {
+                world.entities.spawn(make_divider(x, y, false));
+            },
+            '|' => {
+                world.entities.spawn(make_divider(x, y, true));
+            },
             'u' => {
-                background = true;
                 world.entities.spawn(make_trap_ceiling(x, y));
             },
-            '.' => (),
+            '.' => {
+                background = false;
+            },
             '\n' => {
+                background = false;
                 y -= 1;
                 x = -1;
             },
-            '\r' => (),
+            '\r' => {
+                background = false;
+            },
             _ => panic!(format!("Unknown entity: {}", c))
         }
         if background {
@@ -57,6 +73,9 @@ pub fn load() -> World {
         }
         x += 1;
     }
+
+    let cary_pos = world.entities.get_mut::<Pos>(world.cary).unwrap().curr;
+    world.camera.pos = cary_pos;
 
     world
 }

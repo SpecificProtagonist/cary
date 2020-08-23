@@ -178,7 +178,7 @@ pub fn make_tile_solid(x: i32, y: i32) -> (Pos, Sprite, Collider) {
 }
 
 pub fn make_tile_movable(x: i32, y: i32) -> (Pos, Sprite, Collider, Physics, Carryable) {
-    let bounds = Bounds::around(Vec2(0.0, 0.5), Vec2(1.0, 1.0));
+    let bounds = Bounds::around(Vec2(0.0, 0.5), Vec2(0.95, 0.95));
     (
         Vec2(x as f32, y as f32).into(),
         Sprite::single(TILE_MOVEABLE, TexAnchor::Bottom, Layer::ForegroundTile),
@@ -193,7 +193,7 @@ pub fn make_tile_movable(x: i32, y: i32) -> (Pos, Sprite, Collider, Physics, Car
             collided: (Horizontal::None, Vertical::None)
         },
         Carryable {
-            detect_bounds: Bounds::around(Vec2(0.0, 1.4), Vec2(1.2, 1.0)),
+            detect_bounds: Bounds::around(Vec2(0.0, 1.48), Vec2(1.2, 0.84)),
             carry_offset: Vec2(0.0, -1.33),
             carried: false
         },
@@ -210,11 +210,23 @@ pub fn make_spikes(x: i32, y: i32) -> (Pos, Hazzard, Sprite) {
     )
 }
 
+pub fn make_divider(x: i32, y: i32, vertical: bool) -> (Pos, Hazzard, Sprite) {
+    (
+        Vec2(x as f32, y as f32).into(),
+        Hazzard {
+            bounds: Bounds::around(Vec2(0.0, 0.5), 
+            if vertical {Vec2(0.375, 1.0)} else { Vec2(1.0, 0.375) })
+        },
+        Sprite::single(if vertical {DIVIDER_V} else {DIVIDER_H}, 
+            TexAnchor::Bottom, Layer::Foreground),
+    )
+}
+
 pub fn make_trap_ceiling(x: i32, y: i32) -> (Pos, Hazzard, Sprite) {
     (
         Vec2(x as f32, y as f32).into(),
         Hazzard {
-            bounds: Bounds::around(Vec2(0.0, 0.7), Vec2(1.0, 0.6))
+            bounds: Bounds::around(Vec2(0.0, 0.75), Vec2(1.0, 0.5))
         },
         Sprite::ani(TRAP_CEIL, TexAnchor::Bottom, Layer::Foreground, 0.13, true),
     )
@@ -226,7 +238,7 @@ pub struct Player {
 }
 
 pub fn make_player(pos: Vec2) -> (Player, Pos, Physics, Controllable, Children, Killable, Sprite){
-    let bounds = Bounds::around(Vec2::zero(), Vec2(0.65, 0.65));
+    let bounds = Bounds::around(Vec2::zero(), Vec2(0.65, 0.55));
     (
         Player { 
             flap_cooldown: 0.0,
@@ -255,7 +267,7 @@ pub struct Cary {
 }
 
 pub fn make_cary(pos: Vec2) -> (Cary, Pos, Physics, Killable, Carryable, Sprite) {
-    let bounds = Bounds::around(Vec2(0.0, 0.6), Vec2(0.6, 1.2));
+    let bounds = Bounds::around(Vec2(0.0, 0.6), Vec2(0.7, 1.2));
     (
         Cary {
             walk_right: true
@@ -286,7 +298,7 @@ pub struct Exit(pub Bounds);
 pub fn make_exit(x: i32, y: i32) -> (Pos, Exit, Sprite) {
     (
         Vec2(x as f32, y as f32).into(),
-        Exit( Bounds::around(Vec2(0.0, 0.7), Vec2(0.3, 1.4))),
+        Exit( Bounds::around(Vec2(0.0, 0.6), Vec2(0.3, 1.6))),
         Sprite::single(EXIT, TexAnchor::Bottom, Layer::Foreground)
     )
 }
