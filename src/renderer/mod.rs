@@ -29,4 +29,3 @@ impl From<Layer> for f32 {
         layer as i32 as f32 / 10.0
     }
 }
-

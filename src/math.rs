@@ -18,10 +18,23 @@ impl Vec2 {
         self / self.len()
     }
 
+    /*
     /// Clockwise rotation
     pub fn rotated(self, turns: f32) -> Self {
-        Vec2(turns.cos() * self.0 + turns.sin() * self.1,
-             turns.cos() * self.1 - turns.sin() * self.0)
+        let rot = turns * std::f32::consts::PI;
+        Vec2(rot.cos() * self.0 + rot.sin() * self.1,
+             rot.cos() * self.1 - rot.sin() * self.0)
+    }
+    */
+    
+    pub fn rotated(self, rotation: u8) -> Vec2 {
+        match rotation {
+            0 => self,
+            1 => Vec2(self.1, -self.0),
+            2 => Vec2(-self.0, -self.1),
+            3 => Vec2(-self.1, self.0),
+            _ => panic!()
+        }
     }
 
     pub fn lerp(self, destination: Vec2, progress: f32) -> Self {

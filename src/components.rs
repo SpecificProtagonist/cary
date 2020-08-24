@@ -102,6 +102,7 @@ pub struct Sprite {
     pub layer: Layer,
     pub tex: &'static [TexCoords],
     pub mirror: bool,
+    pub rotation: u8,
     pub frame_duration: f32,
     pub repeat: bool,
     pub timer: f32,
@@ -109,12 +110,13 @@ pub struct Sprite {
 }
 
 impl Sprite {
-    pub fn single(coords: &'static [TexCoords], tex_anchor: TexAnchor, layer: Layer) -> Self {
+    pub fn single(coords: &'static [TexCoords], tex_anchor: TexAnchor, layer: Layer, rotation: u8) -> Self {
         Sprite {
             offset: Vec2::zero(),
             tex_anchor,
             tex: coords,
             mirror: false,
+            rotation,
             frame_duration: f32::INFINITY,
             repeat: false,
             timer: 0.0,
@@ -123,12 +125,13 @@ impl Sprite {
         }
     }
 
-    pub fn ani(coords: &'static [TexCoords], tex_anchor: TexAnchor, layer: Layer, frame_duration: f32, repeat: bool) -> Self {
+    pub fn ani(coords: &'static [TexCoords], tex_anchor: TexAnchor, layer: Layer, frame_duration: f32, repeat: bool, rotation: u8) -> Self {
         Sprite {
             offset: Vec2::zero(),
             tex_anchor,
             tex: coords,
             mirror: false,
+            rotation,
             frame_duration,
             repeat,
             timer: 0.0,
@@ -162,6 +165,7 @@ pub fn make_tile_background(x: i32, y: i32) -> (Pos, Sprite) {
             tex_anchor: TexAnchor::Bottom,
             tex: TILE_FREE,
             mirror: false,
+            rotation: 0,
             frame_duration: f32::INFINITY,
             repeat: false,
             timer: 0.0,
@@ -174,7 +178,7 @@ pub fn make_tile_background(x: i32, y: i32) -> (Pos, Sprite) {
 pub fn make_tile_solid(x: i32, y: i32) -> (Pos, Sprite, Collider) {
     (
         Vec2(x as f32, y as f32).into(),
-        Sprite::single(TILE_SOLID, TexAnchor::Bottom, Layer::ForegroundTile),
+        Sprite::single(TILE_SOLID, TexAnchor::Bottom, Layer::ForegroundTile, 0),
         Collider {
             bounds: Bounds::around(Vec2(0.0, 0.5), Vec2(1.0, 1.0))
         }
@@ -185,7 +189,7 @@ pub fn make_tile_movable(x: i32, y: i32) -> (Pos, Sprite, Collider, Physics, Car
     let bounds = Bounds::around(Vec2(0.0, 0.5), Vec2(0.95, 0.95));
     (
         Vec2(x as f32, y as f32).into(),
-        Sprite::single(TILE_MOVEABLE, TexAnchor::Bottom, Layer::ForegroundTile),
+        Sprite::single(TILE_MOVEABLE, TexAnchor::Bottom, Layer::ForegroundTile, 1),
         Collider {
             bounds
         },
@@ -197,20 +201,22 @@ pub fn make_tile_movable(x: i32, y: i32) -> (Pos, Sprite, Collider, Physics, Car
             collided: (Horizontal::None, Vertical::None)
         },
         Carryable {
-            detect_bounds: Bounds::around(Vec2(0.0, 1.48), Vec2(1.2, 0.84)),
-            carry_offset: Vec2(0.0, -1.33),
+            detect_bounds: Bounds::around(Vec2(0.0, 1.4), Vec2(1.2, 0.8)),
+            carry_offset: Vec2(0.0, -(bounds.size().1 + 0.55/2.0)),
             carried: false
         },
     )
 }
 
-pub fn make_spikes(x: i32, y: i32) -> (Pos, Hazzard, Sprite) {
+pub fn make_spikes(x: i32, y: i32, rotation: u8) -> (Pos, Hazzard, Sprite) {
     (
         Vec2(x as f32, y as f32).into(),
         Hazzard {
-            bounds: Bounds::around(Vec2(0.0, 0.4), Vec2(1.0, 0.8))
+            bounds: Bounds::around(
+                Vec2(0.0, 0.5) + Vec2(0.0, -0.1).rotated(rotation), 
+                if rotation % 2 == 0 {Vec2(1.0, 0.8)} else {Vec2(0.8, 1.0)})
         },
-        Sprite::ani(SPIKES, TexAnchor::Bottom, Layer::Foreground, 0.27, true),
+        Sprite::ani(SPIKES, TexAnchor::Bottom, Layer::Foreground, 0.27, true, rotation),
     )
 }
 
@@ -221,18 +227,20 @@ pub fn make_divider(x: i32, y: i32, vertical: bool) -> (Pos, Hazzard, Sprite) {
             bounds: Bounds::around(Vec2(0.0, 0.5), 
             if vertical {Vec2(0.28, 1.0)} else { Vec2(1.0, 0.375) })
         },
-        Sprite::ani(if vertical {DIVIDER_V} else {DIVIDER_H}, 
-            TexAnchor::Bottom, Layer::Foreground, 1.0/25.0, true),
+        Sprite::ani(DIVIDER, TexAnchor::Bottom, Layer::Foreground, 
+            1.0/25.0, true,if vertical {0} else {1}),
     )
 }
 
-pub fn make_trap_ceiling(x: i32, y: i32) -> (Pos, Hazzard, Sprite) {
+pub fn make_trap(x: i32, y: i32, rotation: u8) -> (Pos, Hazzard, Sprite) {
     (
         Vec2(x as f32, y as f32).into(),
         Hazzard {
-            bounds: Bounds::around(Vec2(0.0, 0.75), Vec2(1.0, 0.5))
+            bounds: Bounds::around(
+                Vec2(0.0, 0.5) + Vec2(0.0, 0.25).rotated(rotation), 
+                if rotation % 2 == 0 {Vec2(0.8, 0.4)} else {Vec2(0.4, 0.8)})
         },
-        Sprite::ani(TRAP_CEIL, TexAnchor::Bottom, Layer::Foreground, 0.13, true),
+        Sprite::ani(TRAP_CEIL, TexAnchor::Bottom, Layer::Foreground, 0.13, true, rotation),
     )
 }
 
@@ -243,7 +251,7 @@ pub struct Player {
 }
 
 pub fn make_player(pos: Vec2) -> (Player, Pos, Physics, Controllable, Children, Killable, Sprite){
-    let bounds = Bounds::around(Vec2::zero(), Vec2(0.65, 0.55));
+    let bounds = Bounds::around(Vec2::zero(), Vec2(0.55, 0.43));
     (
         Player { 
             flap_cooldown: 0.0,
@@ -264,7 +272,7 @@ pub fn make_player(pos: Vec2) -> (Player, Pos, Physics, Controllable, Children, 
             bounds,
             loss_on_death: true
         },
-        Sprite::ani(PLAYER_FLY, TexAnchor::Center, Layer::Foreground, 0.08, false),
+        Sprite::ani(PLAYER_FLY, TexAnchor::Center, Layer::Foreground, 0.08, false, 0),
     )
 }
 
@@ -272,22 +280,21 @@ pub struct Cary {
     pub walk_right: bool
 }
 
-pub fn make_cary(pos: Vec2) -> (Cary, Pos, Physics, Killable, Carryable, Sprite) {
-    let bounds = Bounds::around(Vec2(0.0, 0.6), Vec2(0.7, 1.2));
+pub fn make_cary(pos: Vec2) -> (Cary, Pos, Physics, Killable, Carryable, Sprite) { 
     (
         Cary {
             walk_right: true
         },
         pos.into(),
         Physics {
-            bounds,
+            bounds: Bounds::around(Vec2(0.0, 0.6), Vec2(0.7, 1.2)),
             vel: Vec2::zero(),
             mass: 1.0,
             gravity: true,
             collided: (Horizontal::None, Vertical::None)
         },
         Killable {
-            bounds,
+            bounds: Bounds::around(Vec2(0.0, 0.6), Vec2(0.3, 1.2)),
             loss_on_death: true
         },
         Carryable {
@@ -295,7 +302,7 @@ pub fn make_cary(pos: Vec2) -> (Cary, Pos, Physics, Killable, Carryable, Sprite)
             carry_offset: Vec2(0.0, -1.3),
             carried: false
         },
-        Sprite::ani(CARY_WALK, TexAnchor::Bottom, Layer::ForegroundPlayer, 0.2, true)
+        Sprite::ani(CARY_WALK, TexAnchor::Bottom, Layer::ForegroundPlayer, 0.2, true, 0)
     )
 }
 
@@ -305,6 +312,6 @@ pub fn make_exit(x: i32, y: i32) -> (Pos, Exit, Sprite) {
     (
         Vec2(x as f32, y as f32).into(),
         Exit( Bounds::around(Vec2(0.0, 0.6), Vec2(0.3, 1.6))),
-        Sprite::single(EXIT, TexAnchor::Bottom, Layer::Foreground)
+        Sprite::single(EXIT, TexAnchor::Bottom, Layer::Foreground, 0)
     )
 }

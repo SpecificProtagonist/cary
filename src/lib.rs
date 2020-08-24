@@ -14,6 +14,7 @@ use wasm_bindgen::prelude::wasm_bindgen;
 use hecs::Entity;
 use math::*;
 use components::*;
+use level::Levels;
 use renderer::{Renderer, Layer};
 
 
@@ -42,6 +43,34 @@ pub fn wasm_main() {
 
 pub fn main() {
 
+    let args: Vec<String> = std::env::args().collect();
+
+    if args.len() == 2 && args[1] == "--dump-levels" {
+        use std::io::Write;
+        for (index, level) in Levels::default().level_strings.iter().enumerate() {
+            std::fs::File::create(format!("cary_level_{}", index)).unwrap()
+                .write_all(level.as_bytes()).unwrap();
+        }
+        std::process::exit(0);
+    }
+
+    let mut levels = if args.len() > 1 {
+        let mut level_strings = Vec::new();
+        for path in args.iter().skip(1) {
+            level_strings.push(
+                match std::fs::read_to_string(path) {
+                    Ok(string) => string,
+                    Err(err) => {
+                        println!("Failed to read level file {}: {}", path, err);
+                        std::process::exit(1);
+                    }
+                });
+        }
+        Levels::new(level_strings)
+    } else {
+        Levels::default()
+    };
+
     let event_loop = EventLoop::new();
     // There will be only one window -> ignore window ids in events
     let window = winit::window::WindowBuilder::new()
@@ -56,7 +85,6 @@ pub fn main() {
     }
     let mut renderer = Renderer::create(&window);
 
-    let mut level = 0;
     let mut game_state = GameState::ShowControls;
 
     // std::time's not available in wasm?
@@ -81,15 +109,14 @@ pub fn main() {
                         {
                             match world.state {
                                 WorldState::Victory(_, time) if time > GAME_END_WAIT_TIME => {
-                                    level += 1;
-                                    if level < level::level_count() {
-                                        *world = level::load(level)
+                                    if levels.next() {
+                                        *world = levels.load()
                                     } else {
                                         game_state = GameState::Victory
                                     }
                                 },
                                 WorldState::Loss(_, time) if time > GAME_END_WAIT_TIME
-                                => *world = level::load(level),
+                                    => *world = levels.load(),
                                 _ => world.input(input)
                             }
                         } else {
@@ -98,7 +125,7 @@ pub fn main() {
                     },
                     GameState::ShowControls => {
                         if input.virtual_keycode.is_some() & (input.state == winit::event::ElementState::Pressed) {
-                            game_state = GameState::WorldLoaded(level::load(level))
+                            game_state = GameState::WorldLoaded(levels.load())
                         }
                     },
                     GameState::Victory => ()
@@ -332,6 +359,7 @@ impl World {
                 player.carrying = None;
                 children.0.retain(|child| *child != carried);
                 drop(player_query);
+                self.entities.get_mut::<Pos>(self.player).unwrap().curr.1 += 0.07; // Ensure we can't drop into a collider we were just carrying
                 self.entities.get_mut::<Carryable>(carried).unwrap().carried = false;
                 self.entities.remove_one::<ChildOf>(carried).unwrap();
             } else if let Some(to_be_carried) = self.find_pickupable() {
@@ -442,10 +470,12 @@ impl World {
                                 physics.vel.0 *= 1.0 - GROUND_FRICTION * TIME_BETWEEN_UPDATES;
                                 movement.1 = 0.0;
                             }
+                            /* // somehow prevents walking in -x direction?!
                             if (movement.0 != 0.0) & (movement.1 != 0.0) {
                                 // Corner hit head on
                                 movement = Vec2::zero()
                             }
+                            */
                         }
                     }
                 }
@@ -543,7 +573,7 @@ impl World {
                     index_base.min(sprite.tex.len()-1)
                 }
             ];
-            renderer.draw(&self.camera, pos, sprite.tex_anchor, tex, sprite.layer, sprite.mirror)
+            renderer.draw(&self.camera, pos, sprite.tex_anchor, tex, sprite.layer, sprite.mirror, sprite.rotation)
         }
 
         // Pickup hint
@@ -552,7 +582,8 @@ impl World {
             let carryable = self.entities.get::<Carryable>(carryable).unwrap();
             if !carryable.carried {
                 renderer.draw(&self.camera, player_pos.curr + carryable.carry_offset * 0.5, 
-                    textures::TexAnchor::Center, &textures::PICKUP_HINT[0], Layer::ForegroundPickupHint, false);
+                    textures::TexAnchor::Center, &textures::PICKUP_HINT[0], 
+                    Layer::ForegroundPickupHint, false, 0);
             }
         }
 
@@ -562,7 +593,8 @@ impl World {
         if match self.state { WorldState::Running => player.stamina < 1.0, _ => false } {
             // TODO: independant of camera.size
             renderer.draw(&self.camera, player_pos + Vec2(0.0, 0.7), textures::TexAnchor::Bottom,
-                &textures::STAMINA_BAR[(player.stamina * textures::STAMINA_BAR.len() as f32) as usize], Layer::UI, false);
+                &textures::STAMINA_BAR[(player.stamina * textures::STAMINA_BAR.len() as f32) as usize], 
+                Layer::UI, false, 0);
         }
 
         // Transition
@@ -575,14 +607,14 @@ impl World {
                 renderer.set_transition(&self.camera, center, transition_speed * time, false);
                 if time > GAME_END_WAIT_TIME {
                     renderer.draw(&UI_CAMERA, Vec2::zero(), textures::TexAnchor::Center, 
-                        &textures::TEXT_RETRY[0], Layer::UI, false);
+                        &textures::TEXT_RETRY[0], Layer::UI, false, 0);
                 }
             },
             WorldState::Victory(center, time) => {
                 renderer.set_transition(&self.camera, center, transition_speed * time, true);
                 if time > GAME_END_WAIT_TIME {
                     renderer.draw(&UI_CAMERA, Vec2::zero(), textures::TexAnchor::Center, 
-                        &textures::TEXT_NEXT[0], Layer::UI, false);
+                        &textures::TEXT_NEXT[0], Layer::UI, false, 0);
                 }
             }
         }
@@ -601,11 +633,11 @@ fn render_show_controls(renderer: &mut Renderer) {
     for x in -30..31 {
         for y in -10..10 {
             renderer.draw(&UI_CAMERA, Vec2(x as f32, y as f32), textures::TexAnchor::Center, 
-                &textures::CYAN[0], Layer::ForegroundTile, false);
+                &textures::CYAN[0], Layer::ForegroundTile, false, 0);
         }
     }
     renderer.draw(&UI_CAMERA, Vec2::zero(), textures::TexAnchor::Center, 
-        &textures::CONTROLS[0], Layer::UI, false);
+        &textures::CONTROLS[0], Layer::UI, false, 0);
     renderer.render();
 }
 
@@ -613,10 +645,10 @@ fn render_victory(renderer: &mut Renderer) {
     for x in -30..31 {
         for y in -10..10 {
             renderer.draw(&UI_CAMERA, Vec2(x as f32, y as f32), textures::TexAnchor::Center, 
-                &textures::CYAN[0], Layer::ForegroundTile, false);
+                &textures::CYAN[0], Layer::ForegroundTile, false, 0);
         }
     }
     renderer.draw(&UI_CAMERA, Vec2::zero(), textures::TexAnchor::Center, 
-        &textures::VICTORY[0], Layer::UI, false);
+        &textures::VICTORY[0], Layer::UI, false, 0);
     renderer.render();
 }

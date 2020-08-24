@@ -7,8 +7,6 @@ use web_sys::{
     WebGlShader, 
     WebGlVertexArrayObject, 
     WebGlBuffer, 
-    WebGlFramebuffer,
-    WebGlTexture
 };
 use image::GenericImageView;
 use crate::textures::{self, TexCoords, TexAnchor};
@@ -21,7 +19,7 @@ const ATTRIB_SIZE: u32 = 2;
 const ATTRIB_UV_CENTER: u32 = 3;
 const ATTRIB_UV_SIZE: u32 = 4;
 const ATTRIB_LAYER: u32 = 5;
-const ATTRIB_COLOR: u32 = 5;
+const ATTRIB_ROTATION: u32 = 6;
 
 #[repr(C)]
 #[derive(Copy, Clone)]
@@ -31,7 +29,8 @@ struct SpriteInstance {
     size: Vec2,
     uv_center: Vec2,
     uv_size: Vec2,
-    layer: f32
+    layer: f32,
+    rotation: f32
 } 
 unsafe impl bytemuck::Pod for SpriteInstance {}
 unsafe impl bytemuck::Zeroable for SpriteInstance {}
@@ -131,12 +130,14 @@ impl Renderer {
         context.vertex_attrib_pointer_with_i32(ATTRIB_UV_CENTER, 2, WebGl2RenderingContext::FLOAT, false, instance_size, 4 * 6);
         context.vertex_attrib_pointer_with_i32(ATTRIB_UV_SIZE,   2, WebGl2RenderingContext::FLOAT, false, instance_size, 4 * 8);
         context.vertex_attrib_pointer_with_i32(ATTRIB_LAYER,     1, WebGl2RenderingContext::FLOAT, false, instance_size, 4 * 10);
+        context.vertex_attrib_pointer_with_i32(ATTRIB_ROTATION,  1, WebGl2RenderingContext::FLOAT, false, instance_size, 4 * 11);
         context.enable_vertex_attrib_array(ATTRIB_VERTEX);
         context.enable_vertex_attrib_array(ATTRIB_POSITION);
         context.enable_vertex_attrib_array(ATTRIB_SIZE);
         context.enable_vertex_attrib_array(ATTRIB_UV_CENTER);
         context.enable_vertex_attrib_array(ATTRIB_UV_SIZE);
         context.enable_vertex_attrib_array(ATTRIB_LAYER);
+        context.enable_vertex_attrib_array(ATTRIB_ROTATION);
 
 
         // Remove the "Loading..." text
@@ -208,16 +209,17 @@ impl Renderer {
         self.context.uniform1f(Some(&transition_victory), if victory {1.0} else {0.0});
     }
 
-    pub fn draw(&mut self, camera: &crate::Camera, pos: Vec2, anchor: TexAnchor, tex: &TexCoords, layer: Layer, mirror: bool) {
+    pub fn draw(&mut self, camera: &crate::Camera, pos: Vec2, anchor: TexAnchor, tex: &TexCoords, layer: Layer, mirror: bool, rotation: u8) {
         let size_real = tex.size / textures::PIXELS_PER_TILE;
         let pos = Vec2(pos.0, pos.1 + match anchor {
             TexAnchor::Top    => -size_real.1/2.0,
             TexAnchor::Center => 0.0,
             TexAnchor::Bottom => size_real.1/2.0
         });
-        let resize = Vec2(self.canvas.height() as f32 / self.canvas.width() as f32, 1.0) / camera.size;
-        let screen_pos = (pos-camera.pos) * resize;
-        let screen_size = size_real * resize;
+        let aspect_ratio = self.canvas.height() as f32 / self.canvas.width() as f32;
+        let screen_pos = (pos-camera.pos) / camera.size * Vec2(aspect_ratio, 1.0);
+        let screen_size = size_real / camera.size
+            * if rotation % 2 == 0 {Vec2(aspect_ratio, 1.0)} else {Vec2(1.0, aspect_ratio)};
         if (screen_pos.0 + screen_size.0/2.0 > -1.0) &
            (screen_pos.1 + screen_size.1/2.0 > -1.0) &
            (screen_pos.0 - screen_size.0/2.0 <  1.0) &
@@ -230,7 +232,8 @@ impl Renderer {
                     size: screen_size,
                     uv_center: tex.center * textures::UV_COORDS_FACTOR,
                     uv_size: tex.size * if mirror {Vec2(-1.0, 1.0)} else {Vec2(1.0, 1.0)} * textures::UV_COORDS_FACTOR,
-                    layer: layer.into()
+                    layer: layer.into(),
+                    rotation: rotation as f32
                 });
             }
         }

@@ -20,7 +20,8 @@ struct SpriteInstance {
     size: Vec2,
     uv_center: Vec2,
     uv_size: Vec2,
-    layer: f32
+    layer: f32,
+    rotation: f32
 } 
 unsafe impl bytemuck::Pod for SpriteInstance {}
 unsafe impl bytemuck::Zeroable for SpriteInstance {}
@@ -329,6 +330,12 @@ impl Renderer {
                             VertexAttributeDescriptor {
                                 offset: std::mem::size_of::<f32>() as BufferAddress * 8,
                                 shader_location: 5,
+                                format: VertexFormat::Float,
+                            },
+                            // Rotation
+                            VertexAttributeDescriptor {
+                                offset: std::mem::size_of::<f32>() as BufferAddress * 9,
+                                shader_location: 6,
                                 format: VertexFormat::Float,
                             }
                         ])
@@ -670,17 +677,17 @@ impl Renderer {
         self.queue.submit(Some(encoder.finish()));
     }
 
-    pub fn draw(&mut self, camera: &crate::Camera, pos: Vec2, anchor: TexAnchor, tex: &TexCoords, layer: Layer, mirror: bool) {
+    pub fn draw(&mut self, camera: &crate::Camera, pos: Vec2, anchor: TexAnchor, tex: &TexCoords, layer: Layer, mirror: bool, rotation: u8) {
         let size_real = tex.size / textures::PIXELS_PER_TILE;
         let pos = Vec2(pos.0, pos.1 + match anchor {
             TexAnchor::Top    => -size_real.1/2.0,
             TexAnchor::Center => 0.0,
             TexAnchor::Bottom => size_real.1/2.0
         });
-        let resize = Vec2(self.swap_chain_desc.height as f32 / self.swap_chain_desc.width as f32, 1.0) / camera.size;
-        // TODO: parallax layers?
-        let screen_pos = (pos-camera.pos) * resize;
-        let screen_size = size_real * resize;
+        let aspect_ratio = self.swap_chain_desc.height as f32 / self.swap_chain_desc.width as f32;
+        let screen_pos = (pos-camera.pos) / camera.size * Vec2(aspect_ratio, 1.0);
+        let screen_size = size_real / camera.size
+            * if rotation % 2 == 0 {Vec2(aspect_ratio, 1.0)} else {Vec2(1.0, aspect_ratio)};
         if (screen_pos.0 + screen_size.0/2.0 > -1.0) &
            (screen_pos.1 + screen_size.1/2.0 > -1.0) &
            (screen_pos.0 - screen_size.0/2.0 <  1.0) &
@@ -691,7 +698,8 @@ impl Renderer {
                 size: screen_size,
                 uv_center: tex.center * textures::UV_COORDS_FACTOR,
                 uv_size: tex.size * if mirror {Vec2(-1.0, 1.0)} else {Vec2(1.0, 1.0)} * textures::UV_COORDS_FACTOR,
-                layer: layer.into()
+                layer: layer.into(),
+                rotation: rotation as f32
             })
         }
     }
