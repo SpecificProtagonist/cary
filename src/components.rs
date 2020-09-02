@@ -33,7 +33,6 @@ pub struct Physics {
     /// Bounds relative to position
     pub bounds: Bounds,
     pub vel: Vec2,
-    pub mass: f32,
     pub gravity: bool,
     pub collided: (Horizontal, Vertical)
 }
@@ -68,12 +67,14 @@ pub struct Walking {
     pub jump_time: f32,
 }
 
-pub struct Flying {
-    pub max_speed: f32,
-    pub acc: f32,
+pub struct RemoveOnImpact {}
+
+pub struct Shooter {
+    pub cooldown: f32
 }
 
-pub struct Controllable {
+// Not neccessary with way the game turned out
+pub struct Controllable { 
     pub horizontal: Horizontal,
     pub vertical: Vertical,
     pub pick_up: bool,
@@ -175,6 +176,7 @@ pub fn make_tile_background(x: i32, y: i32) -> (Pos, Sprite) {
     )
 }
 
+// Integer coordinates refer to the bottom center of the tile. This was a mistake.
 pub fn make_tile_solid(x: i32, y: i32) -> (Pos, Sprite, Collider) {
     (
         Vec2(x as f32, y as f32).into(),
@@ -196,7 +198,6 @@ pub fn make_tile_movable(x: i32, y: i32) -> (Pos, Sprite, Collider, Physics, Car
         Physics {
             bounds,
             vel: Vec2::zero(),
-            mass: 1.0,
             gravity: true,
             collided: (Horizontal::None, Vertical::None)
         },
@@ -244,6 +245,47 @@ pub fn make_trap(x: i32, y: i32, rotation: u8) -> (Pos, Hazzard, Sprite) {
     )
 }
 
+pub fn make_bullet(pos: Vec2, target: Vec2) -> (Pos, Sprite, Physics, Hazzard, RemoveOnImpact) {
+    (
+        pos.into(),
+        Sprite::ani(BULLET, TexAnchor::Center, Layer::ForegroundTile, 0.3, true, 0),
+        Physics {
+            bounds: Bounds::around(Vec2::zero(), Vec2(0.6, 0.6)),
+            vel: (target-pos).norm() * 3.0,
+            gravity: false,
+            collided: (Horizontal::None, Vertical::None)
+        },
+        Hazzard {
+            bounds: Bounds::around(Vec2::zero(), Vec2(0.4, 0.4))
+        },
+        RemoveOnImpact {}
+    )
+}
+
+pub fn make_shooter(x: i32, y: i32) -> (Pos, Sprite, Collider, Shooter) {
+    (
+        Vec2(x as f32, y as f32).into(),
+        Sprite {
+            offset: Vec2(0.0, 0.5),
+            tex: SHOOTER,
+            tex_anchor: TexAnchor::Center,
+            layer: Layer::ForegroundTile,
+            mirror: false,
+            rotation: 0,
+            frame_duration: f32::INFINITY,
+            timer: 0.0,
+            repeat: false,
+            running: false
+        },
+        Collider {
+            bounds: Bounds::around(Vec2(0.0, 0.5), Vec2(1.0, 1.0))
+        },
+        Shooter {
+            cooldown: 2.0
+        }
+    )
+}
+
 pub struct Player {
     pub flap_cooldown: f32,
     pub carrying: Option<Entity>,
@@ -251,7 +293,7 @@ pub struct Player {
 }
 
 pub fn make_player(pos: Vec2) -> (Player, Pos, Physics, Controllable, Children, Killable, Sprite){
-    let bounds = Bounds::around(Vec2::zero(), Vec2(0.55, 0.43));
+    let bounds = Bounds::around(Vec2::zero(), Vec2(0.55, 0.55));
     (
         Player { 
             flap_cooldown: 0.0,
@@ -262,7 +304,6 @@ pub fn make_player(pos: Vec2) -> (Player, Pos, Physics, Controllable, Children, 
         Physics {
             bounds,
             vel: Vec2::zero(),
-            mass: 0.25,
             gravity: true,
             collided: (Horizontal::None, Vertical::None)
         },
@@ -289,7 +330,6 @@ pub fn make_cary(pos: Vec2) -> (Cary, Pos, Physics, Killable, Carryable, Sprite)
         Physics {
             bounds: Bounds::around(Vec2(0.0, 0.6), Vec2(0.7, 1.2)),
             vel: Vec2::zero(),
-            mass: 1.0,
             gravity: true,
             collided: (Horizontal::None, Vertical::None)
         },
@@ -298,8 +338,8 @@ pub fn make_cary(pos: Vec2) -> (Cary, Pos, Physics, Killable, Carryable, Sprite)
             loss_on_death: true
         },
         Carryable {
-            detect_bounds: Bounds::around(Vec2(0.0, 1.6), Vec2(1.2, 1.0)),
-            carry_offset: Vec2(0.0, -1.3),
+            detect_bounds: Bounds::around(Vec2(0.0, 1.5), Vec2(1.2, 1.0)),
+            carry_offset: Vec2(0.0, -1.30),
             carried: false
         },
         Sprite::ani(CARY_WALK, TexAnchor::Bottom, Layer::ForegroundPlayer, 0.2, true, 0)

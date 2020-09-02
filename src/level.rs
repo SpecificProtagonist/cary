@@ -97,6 +97,10 @@ impl Levels {
                 '⊃' => {
                     world.entities.spawn(make_trap(x, y, 3));
                 },
+                'S' => {
+                    background = false;
+                    world.entities.spawn(make_shooter(x, y));
+                },
                 '.' => {
                     background = false;
                 },

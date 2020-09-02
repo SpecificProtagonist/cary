@@ -258,6 +258,8 @@ impl World {
                 self.update_cary();
                 self.update_physics();
                 self.update_hazzards();
+                self.update_shooters();
+                self.update_remove_on_impact();
                 self.update_exits();
                 self.update_animations();
                 self.update_camera();
@@ -440,7 +442,7 @@ impl World {
         const TERMINAL_VELOCITY: f32 = 12.0;
         const GROUND_FRICTION: f32 = 4.5;
         for (entity, physics) in self.query::<&mut Physics>().iter() {
-            if physics.vel.1 > -TERMINAL_VELOCITY {
+            if physics.gravity & (physics.vel.1 > -TERMINAL_VELOCITY) {
                 physics.vel.1 -= GRAVITY * TIME_BETWEEN_UPDATES;
             }
 
@@ -505,6 +507,34 @@ impl World {
         }
         if let Some(pos) = loss {
             self.state = WorldState::Loss(pos, 0.0)
+        }
+    }
+
+    fn update_shooters(&mut self) {
+        let max_cooldown = 3.0;
+        let player_pos = self.entities.get::<Pos>(self.player).unwrap().curr;
+        let mut entities_to_spawn = Vec::new(); // TODO: don't allocate each frame
+        for (_, (pos, shooter)) in self.query::<(&Pos, &mut Shooter)>().iter() {
+            shooter.cooldown -= TIME_BETWEEN_UPDATES;
+            if shooter.cooldown <= 0.0 {
+                shooter.cooldown = max_cooldown;
+                entities_to_spawn.push(make_bullet(pos.curr + Vec2(0.0, 0.5), player_pos));
+            }
+        }
+        for entity in entities_to_spawn {
+            self.entities.spawn(entity);
+        }
+    }
+
+    fn update_remove_on_impact(&mut self) {
+        let mut entities_to_despawn = Vec::new(); // TODO: don't allocate each frame
+        for (entity, (_, physics)) in self.query::<(&RemoveOnImpact, &Physics)>().iter() {
+            if physics.collided != (Horizontal::None, Vertical::None) {
+                entities_to_despawn.push(entity)
+            }
+        }
+        for entity in entities_to_despawn {
+            self.entities.despawn(entity);
         }
     }
 
