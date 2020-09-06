@@ -8,6 +8,7 @@ const DEFAULT_LEVELS: &[&str] = &[
     include_str!("../levels/level_2"),
     include_str!("../levels/level_3"),
     include_str!("../levels/level_4"),
+    include_str!("../levels/level_5"),
 ];
 
 pub struct Levels {

@@ -22,7 +22,7 @@ hecs = "0.2" # maybe bevy_hecs would be useful for Added, Mutated
 
 #[target.wasm32-unknown-unknown.dependencies]
 wasm-bindgen = "0.2"
-winit = { path = "../winit", features = ["web-sys"]}
+winit = { version = "0.22", features = ["web-sys"]}
 console_error_panic_hook = "0.1.6"
 js-sys = "0.3.44"
 
@@ -48,7 +48,7 @@ features = [
 ]
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-winit = { path = "../winit" } #removed failing assert; TODO: make sure bug is fixed upsteeam
+winit = "0.22"
 
 
 [build-dependencies]
